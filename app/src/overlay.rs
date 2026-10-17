@@ -1,11 +1,15 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use tauri::{Emitter, Manager, PhysicalPosition, WebviewWindow};
+use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 const TOP_MARGIN: i32 = 40;
+/// Height of the panel header (logical px), which stays clickable in click-through mode.
+const HEADER_HEIGHT: f64 = 40.0;
 
 /// Interactive: receives clicks and keyboard focus. Otherwise click-through.
 static INTERACTIVE: AtomicBool = AtomicBool::new(false);
+/// Fullscreen: covers the monitor (minus a margin) instead of the compact top-center panel.
+static FULLSCREEN: AtomicBool = AtomicBool::new(false);
 
 pub fn setup(window: &WebviewWindow) -> tauri::Result<()> {
     // Must happen before the first map so tiling WMs (i3) float the window.
@@ -57,31 +61,66 @@ pub fn toggle_interactive(window: &WebviewWindow) -> tauri::Result<()> {
     apply_mode(window, interactive)
 }
 
+pub fn toggle_fullscreen(window: &WebviewWindow) -> tauri::Result<()> {
+    let fullscreen = !FULLSCREEN.fetch_xor(true, Ordering::SeqCst);
+    place(window)?;
+    window.emit("fullscreen", fullscreen)
+}
+
 fn apply_mode(window: &WebviewWindow, interactive: bool) -> tauri::Result<()> {
-    window.set_ignore_cursor_events(!interactive)?;
+    set_input_region(window, interactive)?;
     if interactive {
         window.set_focus()?;
     }
     window.emit("interactive", interactive)
 }
 
-/// Top-center of the primary monitor.
+/// Compact: configured size, top-center of the primary monitor.
+/// Fullscreen: the whole monitor minus `TOP_MARGIN` on every side.
 fn place(window: &WebviewWindow) -> tauri::Result<()> {
     let Some(monitor) = window.primary_monitor()? else {
         return Ok(());
     };
-    // outer_size() is still 0 right after mapping, so use the configured width.
-    let width = window
-        .config()
-        .app
-        .windows
-        .iter()
-        .find(|w| w.label == window.label())
-        .map_or(0.0, |w| w.width)
-        * monitor.scale_factor();
-    let origin = monitor.position();
+    let (origin, screen) = (monitor.position(), monitor.size());
+    let (width, height) = if FULLSCREEN.load(Ordering::SeqCst) {
+        (screen.width - 2 * TOP_MARGIN as u32, screen.height - 2 * TOP_MARGIN as u32)
+    } else {
+        // outer_size() is still 0 right after mapping, so use the configured size.
+        let config = window.config().app.windows.iter().find(|w| w.label == window.label());
+        let scale = monitor.scale_factor();
+        (
+            (config.map_or(0.0, |w| w.width) * scale) as u32,
+            (config.map_or(0.0, |w| w.height) * scale) as u32,
+        )
+    };
+    window.set_size(PhysicalSize::new(width, height))?;
     window.set_position(PhysicalPosition::new(
-        origin.x + (monitor.size().width as i32 - width as i32) / 2,
+        origin.x + (screen.width as i32 - width as i32) / 2,
         origin.y + TOP_MARGIN,
     ))
+}
+
+
+/// Interactive: the whole window takes input. Click-through: only the header
+/// (with its buttons) does; clicks anywhere else go to the windows below.
+#[cfg(target_os = "linux")]
+fn set_input_region(window: &WebviewWindow, interactive: bool) -> tauri::Result<()> {
+    let header = (HEADER_HEIGHT * window.scale_factor()?) as i32;
+    let w = window.clone();
+    window.run_on_main_thread(move || {
+        use gtk::cairo::{RectangleInt, Region};
+        use gtk::prelude::WidgetExt;
+        let Ok(gtk_window) = w.gtk_window() else { return };
+        if interactive {
+            gtk_window.input_shape_combine_region(None);
+        } else if let Some(gdk_window) = gtk_window.window() {
+            let region = Region::create_rectangle(&RectangleInt::new(0, 0, i32::MAX / 2, header));
+            gdk_window.input_shape_combine_region(&region, 0, 0);
+        }
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+fn set_input_region(window: &WebviewWindow, interactive: bool) -> tauri::Result<()> {
+    window.set_ignore_cursor_events(!interactive)
 }

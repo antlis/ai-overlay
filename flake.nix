@@ -36,6 +36,7 @@
           pipewire # audio + portal screencast streams
           dbus # xdg-desktop-portal
           libgbm # xcap: wlroots screencopy buffers
+          libayatana-appindicator # tray icon (falls back to XEmbed trays like i3bar)
         ];
       in
       {
@@ -56,8 +57,8 @@
           buildInputs = tauriLibs ++ backendLibs;
 
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (tauriLibs ++ backendLibs);
-          # WebKitGTK renders blank on some GPU/driver combos without this
-          WEBKIT_DISABLE_DMABUF_RENDERER = "1";
+          # Don't set WEBKIT_DISABLE_DMABUF_RENDERER: with the fallback renderer, partial
+          # repaints of the transparent overlay blank out everything else.
         };
       });
 }

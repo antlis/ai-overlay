@@ -3,31 +3,145 @@
   <head>
     <meta charset="UTF-8" />
     <title>invisible-ai</title>
+    <link rel="stylesheet" href="vendor/github-dark.min.css" />
+    <script src="vendor/marked.min.js"></script>
+    <script src="vendor/purify.min.js"></script>
+    <script src="vendor/highlight.min.js"></script>
     <style>
       html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
-      body { font-family: system-ui, sans-serif; color: #eee; }
+      body { font-family: system-ui, sans-serif; color: #eee; font-size: 14px; }
       .panel {
         box-sizing: border-box;
         height: 100%;
-        padding: 16px 20px;
+        display: flex;
+        flex-direction: column;
+        padding: 14px 18px;
         border-radius: 14px;
-        background: rgba(20, 20, 24, 0.72);
+        background: rgba(20, 20, 24, 0.78);
         border: 1px solid rgba(255, 255, 255, 0.08);
+        transition: border-color 120ms;
       }
-      .panel { transition: border-color 120ms; }
       body.interactive .panel { border-color: rgba(124, 92, 255, 0.9); }
-      .panel h1 { margin: 0 0 8px; font-size: 14px; font-weight: 600; opacity: 0.7; }
+      header { display: flex; justify-content: space-between; font-size: 12px; opacity: 0.6; margin-bottom: 8px; }
+      header { align-items: center; }
+      header h1 { margin: 0; font-size: 12px; font-weight: 600; }
+      .controls { display: flex; align-items: center; gap: 6px; }
+      .controls button {
+        font: inherit; color: inherit; cursor: pointer;
+        background: rgba(255, 255, 255, 0.08); border: 0; border-radius: 6px; padding: 2px 8px;
+      }
+      .controls button:hover { background: rgba(255, 255, 255, 0.18); }
+      #question { font-size: 12px; opacity: 0.6; margin: 0 0 6px; }
+      #question:empty { display: none; }
+      #answer { flex: 1; min-height: 0; overflow-y: auto; overflow-wrap: anywhere; line-height: 1.45; }
+      #answer > :first-child { margin-top: 0; }
+      #answer p, #answer ul, #answer ol, #answer pre { margin: 0 0 8px; }
+      #answer ul, #answer ol { padding-left: 20px; }
+      #answer h1, #answer h2, #answer h3, #answer h4 { font-size: 14px; margin: 10px 0 4px; }
+      #answer code { font: 12.5px ui-monospace, "DejaVu Sans Mono", monospace; }
+      #answer :not(pre) > code { background: rgba(255, 255, 255, 0.1); border-radius: 4px; padding: 1px 4px; }
+      #answer pre code.hljs { border-radius: 8px; padding: 8px 10px; background: rgba(0, 0, 0, 0.45); }
+      #answer.pending::after { content: "▍"; opacity: 0.6; }
+      #answer.error { color: #ff8a8a; }
+      #ask-form { display: none; margin-top: 8px; }
+      body.interactive #ask-form { display: block; }
+      #ask-input {
+        box-sizing: border-box; width: 100%; font: inherit; color: inherit;
+        background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 8px; padding: 6px 10px; outline: none;
+      }
+      #ask-input:focus { border-color: rgba(124, 92, 255, 0.9); }
     </style>
   </head>
   <body>
     <div class="panel">
-      <h1>invisible-ai</h1>
-      <p id="mode">Click-through</p>
+      <header>
+        <h1>invisible-ai</h1>
+        <span class="controls">
+          <span id="mode">Click-through</span>
+          <button id="ask" title="Ask about screen">Ask</button>
+          <button data-cmd="fullscreen" id="fullscreen" title="Fullscreen">⤢</button>
+          <button data-cmd="toggle" title="Hide">✕</button>
+        </span>
+      </header>
+      <p id="question"></p>
+      <div id="answer">Click <b>Ask</b> or run <code>invisible-ai ask [question]</code></div>
+      <form id="ask-form">
+        <input id="ask-input" autocomplete="off"
+               placeholder="Ask about your screen… (Enter to send, Esc to cancel)" />
+      </form>
     </div>
     <script>
-      window.__TAURI__.event.listen("interactive", ({ payload }) => {
+      const { listen } = window.__TAURI__.event;
+      const { invoke } = window.__TAURI__.core;
+
+      for (const button of document.querySelectorAll("button[data-cmd]")) {
+        button.addEventListener("click", () => invoke("run", { cmd: button.dataset.cmd }));
+      }
+
+      // Ask: switch to interactive and type a question; Enter sends it with a
+      // screenshot (empty = default question) and returns to click-through.
+      const askInput = document.getElementById("ask-input");
+      const isInteractive = () => document.body.classList.contains("interactive");
+      document.getElementById("ask").addEventListener("click", () => {
+        if (isInteractive()) askInput.focus();
+        else invoke("run", { cmd: "interact" });
+      });
+      document.getElementById("ask-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const text = askInput.value.trim();
+        askInput.value = "";
+        await invoke("run", { cmd: "interact" });
+        invoke("run", { cmd: text ? `ask ${text}` : "ask" });
+      });
+      askInput.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          askInput.value = "";
+          invoke("run", { cmd: "interact" });
+        }
+      });
+
+      listen("fullscreen", ({ payload }) => {
+        document.getElementById("fullscreen").textContent = payload ? "⤡" : "⤢";
+        document.getElementById("fullscreen").title = payload ? "Exit fullscreen" : "Fullscreen";
+      });
+      const question = document.getElementById("question");
+      const answer = document.getElementById("answer");
+
+      // Answers are Markdown from a remote model: sanitize before inserting, since
+      // this page can call app commands.
+      let raw = "", frame = 0;
+      function render() {
+        frame = 0;
+        answer.innerHTML = DOMPurify.sanitize(marked.parse(raw));
+        answer.querySelectorAll("pre code").forEach((el) => hljs.highlightElement(el));
+        answer.scrollTop = answer.scrollHeight;
+      }
+
+      listen("interactive", ({ payload }) => {
         document.body.classList.toggle("interactive", payload);
         document.getElementById("mode").textContent = payload ? "Interactive" : "Click-through";
+        if (payload) askInput.focus();
+      });
+
+      listen("answer", ({ payload: { kind, text } }) => {
+        if (kind === "start") {
+          question.textContent = text;
+          raw = "";
+          answer.textContent = "";
+          answer.className = "pending";
+        } else if (kind === "delta") {
+          raw += text;
+          frame ||= requestAnimationFrame(render); // re-render at most once per frame
+        } else if (kind === "done") {
+          render();
+          answer.className = "";
+        } else if (kind === "error") {
+          cancelAnimationFrame(frame);
+          frame = 0;
+          answer.textContent = text;
+          answer.className = "error";
+        }
       });
     </script>
   </body>
