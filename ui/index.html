@@ -14,13 +14,21 @@
         background: rgba(20, 20, 24, 0.72);
         border: 1px solid rgba(255, 255, 255, 0.08);
       }
+      .panel { transition: border-color 120ms; }
+      body.interactive .panel { border-color: rgba(124, 92, 255, 0.9); }
       .panel h1 { margin: 0 0 8px; font-size: 14px; font-weight: 600; opacity: 0.7; }
     </style>
   </head>
   <body>
     <div class="panel">
       <h1>invisible-ai</h1>
-      <p>Overlay — click-through, always on top.</p>
+      <p id="mode">Click-through</p>
     </div>
+    <script>
+      window.__TAURI__.event.listen("interactive", ({ payload }) => {
+        document.body.classList.toggle("interactive", payload);
+        document.getElementById("mode").textContent = payload ? "Interactive" : "Click-through";
+      });
+    </script>
   </body>
 </html>

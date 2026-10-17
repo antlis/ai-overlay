@@ -1,65 +1,69 @@
-use tauri::{Manager, PhysicalPosition, WebviewWindow};
+mod ipc;
+mod overlay;
 
-const TOP_MARGIN: i32 = 40;
+use std::process::ExitCode;
 
-fn main() {
+use tauri::{AppHandle, Manager, RunEvent};
+
+const COMMANDS: &str = "toggle, interact, quit";
+
+fn main() -> ExitCode {
+    // `invisible-ai <command>` controls the running instance.
+    if let Some(cmd) = std::env::args().nth(1) {
+        return match ipc::send(&cmd) {
+            Ok(reply) if reply == "ok" => ExitCode::SUCCESS,
+            Ok(reply) => {
+                eprintln!("{reply}");
+                ExitCode::FAILURE
+            }
+            Err(e) => {
+                eprintln!("invisible-ai is not running ({e})");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    let listener = match ipc::bind() {
+        Ok(listener) => listener,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(move |app| {
             let overlay = app
                 .get_webview_window("overlay")
                 .expect("overlay window missing from tauri.conf.json");
-            setup_overlay(&overlay)?;
+            overlay::setup(&overlay)?;
+
+            let handle = app.handle().clone();
+            ipc::serve(listener, move |cmd| dispatch(&handle, cmd));
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running invisible-ai");
+        .build(tauri::generate_context!())
+        .expect("error while building invisible-ai")
+        .run(|_, event| {
+            if let RunEvent::Exit = event {
+                let _ = std::fs::remove_file(ipc::socket_path());
+            }
+        });
+    ExitCode::SUCCESS
 }
 
-fn setup_overlay(window: &WebviewWindow) -> tauri::Result<()> {
-    // Must happen before the first map so tiling WMs (i3) float the window.
-    #[cfg(target_os = "linux")]
-    if std::env::var_os("WAYLAND_DISPLAY").is_none() {
-        use gtk::prelude::GtkWindowExt;
-        window
-            .gtk_window()?
-            .set_type_hint(gtk::gdk::WindowTypeHint::Utility);
+fn dispatch(app: &AppHandle, cmd: &str) -> Result<(), String> {
+    let overlay = app
+        .get_webview_window("overlay")
+        .ok_or("overlay window missing")?;
+    match cmd {
+        "toggle" => overlay::toggle_visible(&overlay),
+        "interact" => overlay::toggle_interactive(&overlay),
+        "quit" => {
+            app.exit(0);
+            Ok(())
+        }
+        _ => return Err(format!("unknown command '{cmd}' (expected {COMMANDS})")),
     }
-
-    // On X11 the input shape must be set after the WM manages the window,
-    // otherwise i3 never copies it to its frame and clicks hit the frame.
-    #[cfg(target_os = "linux")]
-    {
-        use gtk::prelude::WidgetExtManual;
-        let w = window.clone();
-        window.gtk_window()?.connect_map_event(move |_, _| {
-            let _ = w.set_ignore_cursor_events(true);
-            gtk::glib::Propagation::Proceed
-        });
-    }
-    #[cfg(not(target_os = "linux"))]
-    window.set_ignore_cursor_events(true)?;
-
-    window.set_visible_on_all_workspaces(true)?;
-    window.show()?;
-
-    // After show(): i3 ignores positions requested before the window is mapped.
-    if let Some(monitor) = window.primary_monitor()? {
-        let screen = monitor.size();
-        // outer_size() is still 0 right after show(), so use the configured width.
-        let width = window
-            .config()
-            .app
-            .windows
-            .iter()
-            .find(|w| w.label == window.label())
-            .map_or(0.0, |w| w.width)
-            * monitor.scale_factor();
-        let width = width as i32;
-        let origin = monitor.position();
-        window.set_position(PhysicalPosition::new(
-            origin.x + (screen.width as i32 - width) / 2,
-            origin.y + TOP_MARGIN,
-        ))?;
-    }
-    Ok(())
+    .map_err(|e| e.to_string())
 }

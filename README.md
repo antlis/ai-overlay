@@ -8,7 +8,8 @@ Linux-first (X11 and Wayland), designed so macOS/Windows backends can be added l
 
 ## Status
 
-Early development. Works today: transparent, click-through, always-on-top overlay on X11 (tested on i3 + picom).
+Early development. Works today on X11 (tested on i3 + picom): transparent, click-through,
+always-on-top overlay controlled over a Unix socket.
 
 ## Requirements
 
@@ -22,12 +23,36 @@ Early development. Works today: transparent, click-through, always-on-top overla
 nix develop -c cargo run
 ```
 
-The first build takes a few minutes. The overlay ignores mouse input, so until hotkeys
-exist, stop it with:
+The first build takes a few minutes.
 
-```sh
-pkill -f 'target/debug/invisible-ai'
+## Control
+
+The running app listens on `$XDG_RUNTIME_DIR/invisible-ai.sock`. The same binary, given a
+command, sends it there:
+
+| Command | Effect |
+|---|---|
+| `invisible-ai toggle` | Show / hide the overlay |
+| `invisible-ai interact` | Switch between click-through and interactive (clickable, focused, purple border) |
+| `invisible-ai quit` | Exit |
+
+Only one instance runs at a time. Bind the commands in your WM, e.g. i3:
+
 ```
+bindsym $mod+backslash       exec --no-startup-id /path/to/invisible-ai toggle
+bindsym $mod+Shift+backslash exec --no-startup-id /path/to/invisible-ai interact
+```
+
+Niri:
+
+```kdl
+binds {
+    Mod+Backslash       { spawn "/path/to/invisible-ai" "toggle"; }
+    Mod+Shift+Backslash { spawn "/path/to/invisible-ai" "interact"; }
+}
+```
+
+Use `target/debug/invisible-ai` until there's a packaged build (or `cargo install --path app`).
 
 > Nix flakes only see files tracked by git — `git add` new files before `nix develop`.
 
@@ -35,7 +60,10 @@ pkill -f 'target/debug/invisible-ai'
 
 ```
 flake.nix      dev shell
-app/           Tauri v2 app (Rust): window setup, platform glue
+app/           Tauri v2 app (Rust)
+  src/main.rs      entry point: run the app, or send a command to the running one
+  src/overlay.rs   overlay window: placement, click-through/interactive modes
+  src/ipc.rs       control socket
 ui/            overlay frontend (static HTML, no build step)
 ```
 
@@ -46,7 +74,7 @@ Backend crates (`core`, `x11`, `wayland`, `audio`, `ai`) are added as their mile
 - [x] **M0** Scaffold — flake dev shell, Tauri v2 workspace
 - [x] **M1** Overlay (X11) — transparent, click-through, always on top, sticky, no taskbar entry, floats in i3
 - [ ] **M1b** Overlay (Wayland/Niri) — `gtk-layer-shell` surface, namespace `invisible-ai`
-- [ ] **M2** Control — Unix socket + `iai` CLI (`toggle`, `interact`, `ask`, `listen`), i3/Niri keybinding examples
+- [x] **M2** Control — Unix socket + CLI (`toggle`, `interact`, `quit`), i3/Niri keybinding examples; `ask`/`listen` land with M4/M5
 - [ ] **M3** Screen capture — XShm on X11; xdg-desktop-portal ScreenCast (PipeWire, restore token) on Wayland
 - [ ] **M4** Ask Claude — screenshot + question → streamed answer in the overlay
 - [ ] **M5** Audio + transcription — PipeWire mic and sink monitor, VAD, local whisper.cpp
@@ -73,4 +101,6 @@ There is no Linux-wide API for this.
 
 ## Notes
 
-- **i3:** the overlay floats because it's a `UTILITY`-type window. Click-through is enabled on GTK `map-event`, because i3 only copies the input shape to its frame if it's set after the window is managed.
+- **i3:** the overlay floats because it's a `UTILITY`-type window. Position and click-through are applied on GTK `map-event`: i3 ignores positions requested before the window is managed, and only copies the input shape to its frame if it's set afterwards.
+- **Focus:** `focus_on_map` is off (`_NET_WM_USER_TIME=0`) so showing the overlay never steals focus; only `interact` focuses it.
+- **Control socket** is Unix-only; Windows will need a named pipe.
