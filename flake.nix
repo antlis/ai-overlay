@@ -35,6 +35,7 @@
           libxfixes # click-through input shape
           pipewire # audio + portal screencast streams
           dbus # xdg-desktop-portal
+          libgbm # xcap: wlroots screencopy buffers
         ];
       in
       {
@@ -48,13 +49,12 @@
             clippy
             rust-analyzer
             cargo-tauri
-            llvmPackages.libclang # bindgen (pipewire, whisper-rs)
+            rustPlatform.bindgenHook # libclang + libc headers for bindgen (pipewire, whisper-rs)
             cmake # whisper.cpp build
           ];
 
           buildInputs = tauriLibs ++ backendLibs;
 
-          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (tauriLibs ++ backendLibs);
           # WebKitGTK renders blank on some GPU/driver combos without this
           WEBKIT_DISABLE_DMABUF_RENDERER = "1";

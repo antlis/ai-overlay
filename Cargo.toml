@@ -6,3 +6,18 @@ members = ["app"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+
+# PNG encoding takes ~1s per screenshot unoptimized. Optimize only the hot crates;
+# optimizing everything (Tauri/WebKit bindings) makes dev builds far slower.
+[profile.dev.package.image]
+opt-level = 3
+[profile.dev.package.png]
+opt-level = 3
+[profile.dev.package.fdeflate]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.crc32fast]
+opt-level = 3
+[profile.dev.package.xcap]
+opt-level = 3

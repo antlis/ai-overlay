@@ -9,7 +9,7 @@ Linux-first (X11 and Wayland), designed so macOS/Windows backends can be added l
 ## Status
 
 Early development. Works today on X11 (tested on i3 + picom): transparent, click-through,
-always-on-top overlay controlled over a Unix socket.
+always-on-top overlay controlled over a Unix socket; screenshots of the current monitor.
 
 ## Requirements
 
@@ -34,6 +34,7 @@ command, sends it there:
 |---|---|
 | `invisible-ai toggle` | Show / hide the overlay |
 | `invisible-ai interact` | Switch between click-through and interactive (clickable, focused, purple border) |
+| `invisible-ai capture` | Screenshot the overlay's monitor; prints the PNG path (`$XDG_CACHE_HOME/invisible-ai/captures/`) |
 | `invisible-ai quit` | Exit |
 
 Only one instance runs at a time. Bind the commands in your WM, e.g. i3:
@@ -64,6 +65,7 @@ app/           Tauri v2 app (Rust)
   src/main.rs      entry point: run the app, or send a command to the running one
   src/overlay.rs   overlay window: placement, click-through/interactive modes
   src/ipc.rs       control socket
+  src/capture.rs   screen capture (xcap)
 ui/            overlay frontend (static HTML, no build step)
 ```
 
@@ -75,7 +77,8 @@ Backend crates (`core`, `x11`, `wayland`, `audio`, `ai`) are added as their mile
 - [x] **M1** Overlay (X11) — transparent, click-through, always on top, sticky, no taskbar entry, floats in i3
 - [ ] **M1b** Overlay (Wayland/Niri) — `gtk-layer-shell` surface, namespace `invisible-ai`
 - [x] **M2** Control — Unix socket + CLI (`toggle`, `interact`, `quit`), i3/Niri keybinding examples; `ask`/`listen` land with M4/M5
-- [ ] **M3** Screen capture — XShm on X11; xdg-desktop-portal ScreenCast (PipeWire, restore token) on Wayland
+- [x] **M3** Screen capture (X11) — `capture` command via [xcap](https://crates.io/crates/xcap), ~200 ms per 1080p PNG
+- [ ] **M3b** Screen capture (Wayland) — xcap tries wlroots screencopy / portal Screenshot; verify on Niri, fall back to portal ScreenCast if needed
 - [ ] **M4** Ask Claude — screenshot + question → streamed answer in the overlay
 - [ ] **M5** Audio + transcription — PipeWire mic and sink monitor, VAD, local whisper.cpp
 - [ ] **M6** Meeting copilot — rolling transcript, auto-suggestions, post-meeting summary
@@ -104,3 +107,5 @@ There is no Linux-wide API for this.
 - **i3:** the overlay floats because it's a `UTILITY`-type window. Position and click-through are applied on GTK `map-event`: i3 ignores positions requested before the window is managed, and only copies the input shape to its frame if it's set afterwards.
 - **Focus:** `focus_on_map` is off (`_NET_WM_USER_TIME=0`) so showing the overlay never steals focus; only `interact` focuses it.
 - **Control socket** is Unix-only; Windows will need a named pipe.
+- **Capture** includes the overlay itself. Old captures are never deleted yet.
+- **Dev builds** optimize only the image/PNG/xcap crates (see `Cargo.toml`); optimizing all deps makes builds much slower.

@@ -35,9 +35,10 @@ pub fn bind() -> io::Result<UnixListener> {
 }
 
 /// Handle one command per connection on a background thread.
+/// Replies are `ok`, `ok <output>` or `error: <message>`.
 pub fn serve<F>(listener: UnixListener, handle: F)
 where
-    F: Fn(&str) -> Result<(), String> + Send + 'static,
+    F: Fn(&str) -> Result<String, String> + Send + 'static,
 {
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
@@ -46,7 +47,8 @@ where
                 continue;
             }
             let reply = match handle(line.trim()) {
-                Ok(()) => "ok".to_owned(),
+                Ok(out) if out.is_empty() => "ok".to_owned(),
+                Ok(out) => format!("ok {out}"),
                 Err(e) => format!("error: {e}"),
             };
             let _ = writeln!(&stream, "{reply}");
