@@ -12,14 +12,26 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 const SYSTEM_PROMPT: &str = "You are a concise assistant shown in a small overlay on the user's \
-screen. You get a screenshot of their screen and a question. Answer directly and briefly; \
-use short Markdown (lists, code blocks) only when it helps.";
+screen. You get a question, usually a screenshot of their screen, and sometimes a live transcript of \
+a conversation (\"Me\" is the user, \"Them\" is the other people). When the question comes \
+from the conversation, answer it so the user can use the answer right away. Answer directly \
+and briefly; use short Markdown (lists, code blocks) only when it helps.";
 
 #[derive(Deserialize)]
 pub struct Config {
     /// Name of the entry in `providers` to use.
     pub provider: String,
     pub providers: HashMap<String, Provider>,
+    #[serde(default)]
+    pub voice: crate::voice::VoiceConfig,
+    #[serde(default)]
+    pub ui: UiConfig,
+}
+
+#[derive(Deserialize, Default)]
+pub struct UiConfig {
+    /// Asked when the question is empty (Ask with nothing typed, `invisible-ai ask`).
+    pub default_question: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -77,24 +89,28 @@ impl Provider {
         Ok(key)
     }
 
-    /// Stream an answer about `screenshot_png`, calling `on_delta` per text chunk.
+    /// Stream an answer (about `screenshot_png`, if given), calling `on_delta` per text
+    /// chunk; it returns false to stop. `earlier` holds previous (question, answer) pairs,
+    /// sent as text so follow-up questions have context.
     pub fn ask(
         &self,
+        earlier: &[(String, String)],
         question: &str,
-        screenshot_png: &[u8],
-        mut on_delta: impl FnMut(&str),
+        screenshot_png: Option<&[u8]>,
+        mut on_delta: impl FnMut(&str) -> bool,
     ) -> Result<(), String> {
-        let image = base64::engine::general_purpose::STANDARD.encode(screenshot_png);
+        let mut content = vec![json!({ "type": "text", "text": question })];
+        if let Some(png) = screenshot_png {
+            let image = base64::engine::general_purpose::STANDARD.encode(png);
+            content.push(json!({
+                "type": "image_url",
+                "image_url": { "url": format!("data:image/png;base64,{image}") },
+            }));
+        }
         let body = json!({
             "model": self.model,
             "stream": true,
-            "messages": [
-                { "role": "system", "content": SYSTEM_PROMPT },
-                { "role": "user", "content": [
-                    { "type": "text", "text": question },
-                    { "type": "image_url", "image_url": { "url": format!("data:image/png;base64,{image}") } },
-                ]},
-            ],
+            "messages": messages(earlier, content),
         });
 
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
@@ -128,9 +144,23 @@ impl Provider {
             }
             // Reasoning models also stream `reasoning`/`reasoning_content`; only show the answer.
             if let Some(text) = event["choices"][0]["delta"]["content"].as_str() {
-                on_delta(text);
+                if !on_delta(text) {
+                    break;
+                }
             }
         }
         Ok(())
     }
+}
+
+/// System prompt, earlier exchanges (text only; their screenshots aren't resent), then
+/// the new question.
+fn messages(earlier: &[(String, String)], content: Vec<Value>) -> Vec<Value> {
+    let mut messages = vec![json!({ "role": "system", "content": SYSTEM_PROMPT })];
+    for (question, answer) in earlier {
+        messages.push(json!({ "role": "user", "content": question }));
+        messages.push(json!({ "role": "assistant", "content": answer }));
+    }
+    messages.push(json!({ "role": "user", "content": content }));
+    messages
 }

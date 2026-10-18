@@ -37,12 +37,13 @@ command, sends it there:
 | `invisible-ai interact` | Switch between click-through and interactive (clickable, focused, purple border) |
 | `invisible-ai fullscreen` | Switch between the compact top-center panel and a full-screen panel |
 | `invisible-ai capture` | Screenshot the overlay's monitor (without the overlay); prints the PNG path (`$XDG_CACHE_HOME/invisible-ai/captures/`) |
+| `invisible-ai listen` | Start / stop the live transcript (mic = "Me", system audio = "Them") |
 | `invisible-ai ask [question]` | Screenshot + question → streamed answer in the overlay (default question: help with what's on screen) |
 | `invisible-ai quit` | Exit |
 
 The same actions are in the **tray icon** menu and the panel header (Ask / fullscreen / hide),
 which stays clickable in click-through mode. **Ask** opens a text box: type a question, Enter
-sends it with a screenshot (empty = default question), Esc cancels. Only one instance runs at a time. Bind the commands in your WM, e.g. i3:
+sends it with a screenshot (empty = default question), Esc cancels. Only one instance runs at a time; any command starts the app if it isn't running (so a `toggle` hotkey also launches it; its log goes to `~/.cache/invisible-ai/app.log`). Bind the commands in your WM, e.g. i3:
 
 ```
 bindsym $mod+backslash       exec --no-startup-id /path/to/invisible-ai toggle
@@ -57,6 +58,28 @@ binds {
     Mod+Shift+Backslash { spawn "/path/to/invisible-ai" "interact"; }
 }
 ```
+
+## Live transcript
+
+`listen` (or 🎙 in the header, or the tray) starts a local [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
+server and records the mic and the system output separately with `pw-record`. Speech is cut at
+pauses (~750 ms) and transcribed locally, so no audio leaves the machine. Download the model once:
+
+```sh
+mkdir -p ~/.local/share/invisible-ai/models
+curl -L -o ~/.local/share/invisible-ai/models/ggml-base.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
+```
+
+Questions (lines Whisper ends with `?`) and requests ("Explain …", "Tell me …") are answered
+automatically with the screen and recent transcript as context (`auto_answer` in `[voice]`).
+Mic lines that repeat what the speakers just said are dropped as echo (compared by words, so background music doesn't mute you). Each transcribed line is logged to stderr. If
+`whisper-server` crashes it's restarted; its log is `~/.cache/invisible-ai/whisper-server.log`
+and the clip it died on is kept as `~/.cache/invisible-ai/crash-*.wav`.
+
+Settings are under `[voice]` in the config; keep `language` fixed (e.g. `"en"`): `auto` often misdetects short clips with `base`. On an i7-8650U, `base` transcribes ~3x faster than
+real time; `small` is slower than real time. Use headphones: on speakers the mic also hears the
+other side, so their words show up as "Me" too.
 
 ## AI provider
 
@@ -83,6 +106,7 @@ app/           Tauri v2 app (Rust)
   src/capture.rs   screen capture (xcap)
   src/ai.rs        provider config + streaming chat-completions client
   src/tray.rs      tray icon + menu
+  src/voice.rs     live transcript: pw-record capture, pause detection, whisper-server
 config.example.toml
 ui/            overlay frontend (static HTML, no build step; libs vendored in ui/vendor/)
 ```
@@ -101,17 +125,20 @@ Backend crates (`core`, `x11`, `wayland`, `audio`, `ai`) are added as their mile
 - [x] **UI** Tray icon menu, fullscreen toggle, header buttons in interactive mode
 - [x] **M4b** Markdown answers with syntax-highlighted code (marked + highlight.js, sanitized with DOMPurify, vendored in `ui/vendor/`)
 - [ ] Native Anthropic API (Claude) provider
-- [ ] **M5** Audio + transcription — PipeWire mic and sink monitor, VAD, local whisper.cpp
-- [ ] **M6** Meeting copilot — rolling transcript, auto-suggestions, post-meeting summary
-- [ ] **M7** Hide from capture (Niri) — ship the layer rule below
+- [x] **M5** Live transcript — `pw-record` mic + sink monitor, energy-based pause detection, local whisper.cpp (`base`)
+- [ ] **M6** Meeting copilot — feed the transcript into `ask`, auto-suggestions, post-meeting summary
+- [ ] **M7** Invisible in screen shares (Niri) — layer rule + Niri patch that skips drawing blocked-out layers
 - [ ] Later: macOS (`NSWindow.sharingType = .none`) and Windows (`WDA_EXCLUDEFROMCAPTURE`) backends
 
 ## Hiding the overlay from screen sharing
 
-There is no Linux-wide API for this.
+Goal: the overlay is fully invisible in screen shares, with viewers seeing the desktop underneath
+(as on macOS/Windows), not a black box.
 
-- **X11:** not possible — every capturer reads the same composited screen. Share a single window instead of the whole screen.
-- **Niri:** a layer rule blocks the overlay out of screencasts and screenshots. Viewers see a **black rectangle**, not the content behind it:
+- **X11:** not possible. Every capturer reads the same final screen image, and there's no
+  per-window capture exclusion.
+- **Wayland (Niri), planned:** the overlay becomes a layer-shell surface (namespace
+  `invisible-ai`), blocked out of screencasts by a layer rule:
 
   ```kdl
   layer-rule {
@@ -120,15 +147,16 @@ There is no Linux-wide API for this.
   }
   ```
 
-  Prefer `"screen-capture"` over `"screencast"`: the latter can leak via third-party screenshot tools.
-- **GNOME, KDE, Hyprland:** no known equivalent.
+  Stock Niri draws a black rectangle in its place. A small Niri patch skips drawing blocked-out
+  layer surfaces instead (`src/layer/mapped.rs`), so the share shows what's underneath.
 
 ## Notes
 
 - **i3:** the overlay floats because it's a `UTILITY`-type window. Position and click-through are applied on GTK `map-event`: i3 ignores positions requested before the window is managed, and only copies the input shape to its frame if it's set afterwards.
 - **Focus:** `focus_on_map` is off (`_NET_WM_USER_TIME=0`) so showing the overlay never steals focus; only `interact` focuses it.
 - **Control socket** is Unix-only; Windows will need a named pipe.
-- **Capture** fades the overlay to opacity 0 for ~150 ms so it isn't in the shot. Old captures from `capture` are never deleted yet; `ask` keeps them in memory only.
-- **Rendering:** don't set `WEBKIT_DISABLE_DMABUF_RENDERER=1`; with that fallback renderer, partial repaints blank the rest of the transparent overlay.
+- **Capture** never hides the panel: in compact mode its area is blanked out of the screenshot; in fullscreen mode questions go without a screenshot (text + transcript only).
+- **Scrolling** in click-through mode: use the mouse wheel over the right edge of the panel (a 28 px strip that takes input). Old captures from `capture` are never deleted yet; `ask` keeps them in memory only.
+- **Rendering:** the app sets `WEBKIT_FORCE_COMPOSITING_MODE=1`; WebKitGTK's on-demand switch into compositing mode (e.g. when an answer gets long enough to scroll) otherwise leaves the transparent overlay partly blank. Also don't set `WEBKIT_DISABLE_DMABUF_RENDERER=1`: partial repaints then blank the rest of the overlay.
 - **Tray** uses libayatana-appindicator, which falls back to XEmbed for i3bar.
 - **Dev builds** optimize only the image/PNG/xcap crates (see `Cargo.toml`); optimizing all deps makes builds much slower.

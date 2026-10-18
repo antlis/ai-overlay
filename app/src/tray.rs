@@ -9,6 +9,7 @@ pub fn setup(app: &App) -> tauri::Result<()> {
         app,
         &[
             &item("ask", "Ask about screen")?,
+            &item("listen", "Listen (transcribe)")?,
             &PredefinedMenuItem::separator(app)?,
             &item("toggle", "Show / hide")?,
             &item("interact", "Interactive")?,
@@ -22,9 +23,13 @@ pub fn setup(app: &App) -> tauri::Result<()> {
         .tooltip("invisible-ai")
         .menu(&menu)
         .on_menu_event(|app, event| {
-            if let Err(e) = crate::dispatch(app, event.id().as_ref()) {
-                eprintln!("tray: {e}");
-            }
+            // Off the UI thread: some commands (listen) take seconds to start.
+            let (app, cmd) = (app.clone(), event.id().as_ref().to_owned());
+            std::thread::spawn(move || {
+                if let Err(e) = crate::dispatch(&app, &cmd) {
+                    eprintln!("tray: {e}");
+                }
+            });
         });
     if let Some(icon) = app.default_window_icon() {
         tray = tray.icon(icon.clone());

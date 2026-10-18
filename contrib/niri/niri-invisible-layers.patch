@@ -1,0 +1,25 @@
+diff --git a/src/layer/mapped.rs b/src/layer/mapped.rs
+index b12906b..995b937 100644
+--- a/src/layer/mapped.rs
++++ b/src/layer/mapped.rs
+@@ -168,17 +168,9 @@ impl MappedLayer {
+         let location = location + self.bob_offset();
+ 
+         if target.should_block_out(self.rules.block_out_from) {
+-            // Round to physical pixels.
+-            let location = location.to_physical_precise_round(scale).to_logical(scale);
+-
+-            // FIXME: take geometry-corner-radius into account.
+-            let elem = SolidColorRenderElement::from_buffer(
+-                &self.block_out_buffer,
+-                location,
+-                alpha,
+-                Kind::Unspecified,
+-            );
+-            rv.normal.push(elem.into());
++            // Draw nothing instead of a black rectangle, so screencasts and screenshots
++            // show whatever is underneath, as if the surface weren't there.
++            return rv;
+         } else {
+             // Layer surfaces don't have extra geometry like windows.
+             let buf_pos = location;

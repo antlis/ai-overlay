@@ -8,49 +8,102 @@
     <script src="vendor/purify.min.js"></script>
     <script src="vendor/highlight.min.js"></script>
     <style>
+      :root { --font: 16px; --alpha: 0.78; }
       html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
-      body { font-family: system-ui, sans-serif; color: #eee; font-size: 14px; }
+      body { font-family: system-ui, sans-serif; color: #eee; font-size: var(--font); }
       .panel {
+        position: relative;
         box-sizing: border-box;
         height: 100%;
         display: flex;
         flex-direction: column;
         padding: 14px 18px;
         border-radius: 14px;
-        background: rgba(20, 20, 24, 0.78);
+        background: rgba(20, 20, 24, var(--alpha));
         border: 1px solid rgba(255, 255, 255, 0.08);
         transition: border-color 120ms;
       }
       body.interactive .panel { border-color: rgba(124, 92, 255, 0.9); }
-      header { display: flex; justify-content: space-between; font-size: 12px; opacity: 0.6; margin-bottom: 8px; }
-      header { align-items: center; }
-      header h1 { margin: 0; font-size: 12px; font-weight: 600; }
-      .controls { display: flex; align-items: center; gap: 6px; }
-      .controls button {
+      header { display: flex; justify-content: space-between; font-size: 14px; opacity: 0.85; margin-bottom: 10px; }
+      header { align-items: center; cursor: grab; }
+      header h1 { margin: 0; font-size: 14px; font-weight: 600; }
+      .controls { display: flex; align-items: center; gap: 8px; }
+      button {
         font: inherit; color: inherit; cursor: pointer;
-        background: rgba(255, 255, 255, 0.08); border: 0; border-radius: 6px; padding: 2px 8px;
+        background: rgba(255, 255, 255, 0.08); border: 0; border-radius: 7px;
+        min-width: 30px; height: 28px; padding: 0 10px;
       }
-      .controls button:hover { background: rgba(255, 255, 255, 0.18); }
-      #question { font-size: 12px; opacity: 0.6; margin: 0 0 6px; }
-      #question:empty { display: none; }
-      #answer { flex: 1; min-height: 0; overflow-y: auto; overflow-wrap: anywhere; line-height: 1.45; }
-      #answer > :first-child { margin-top: 0; }
-      #answer p, #answer ul, #answer ol, #answer pre { margin: 0 0 8px; }
-      #answer ul, #answer ol { padding-left: 20px; }
-      #answer h1, #answer h2, #answer h3, #answer h4 { font-size: 14px; margin: 10px 0 4px; }
-      #answer code { font: 12.5px ui-monospace, "DejaVu Sans Mono", monospace; }
-      #answer :not(pre) > code { background: rgba(255, 255, 255, 0.1); border-radius: 4px; padding: 1px 4px; }
-      #answer pre code.hljs { border-radius: 8px; padding: 8px 10px; background: rgba(0, 0, 0, 0.45); }
-      #answer.pending::after { content: "▍"; opacity: 0.6; }
-      #answer.error { color: #ff8a8a; }
+      /* Icon-only buttons: larger glyphs. */
+      .controls button.icon { font-size: 16px; padding: 0 8px; }
+      button:hover { background: rgba(255, 255, 255, 0.18); }
+      #ask.stop { background: rgba(255, 80, 80, 0.45); }
+      #history { flex: 1; min-height: 0; overflow-y: auto; overflow-wrap: anywhere; line-height: 1.45; }
+      #history::-webkit-scrollbar, #transcript::-webkit-scrollbar { width: 8px; }
+      #history::-webkit-scrollbar-thumb, #transcript::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.25); border-radius: 4px;
+      }
+      /* Copy buttons sit at the right edge, which takes clicks in click-through mode too. */
+      .entry { position: relative; padding-right: 30px; }
+      .entry + .entry { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.28); }
+      .entry .q { font-size: 0.875em; opacity: 0.6; margin: 0 0 6px; }
+      button.copy {
+        position: absolute; right: 0; min-width: 24px; height: 24px; padding: 0;
+        font-size: 13px; opacity: 0.55;
+      }
+      button.copy:hover { opacity: 1; }
+      .entry > button.copy { top: 0; }
+      .entry + .entry > button.copy { top: 14px; }
+      .a pre { position: relative; }
+      .a pre > button.copy { top: 4px; right: -30px; } /* in the gutter, like the answer's */
+      .a > :first-child { margin-top: 0; }
+      .a p, .a ul, .a ol, .a pre { margin: 0 0 8px; }
+      .a ul, .a ol { padding-left: 20px; }
+      .a h1, .a h2, .a h3, .a h4 { font-size: 0.875em; margin: 10px 0 4px; }
+      .a code { font: 0.8em ui-monospace, "DejaVu Sans Mono", monospace; }
+      .a :not(pre) > code { background: rgba(255, 255, 255, 0.1); border-radius: 4px; padding: 1px 4px; }
+      .a pre code.hljs { border-radius: 8px; padding: 8px 10px; background: rgba(0, 0, 0, 0.45); }
+      .a.pending::after { content: "▍"; opacity: 0.6; }
+      .a.error { color: #ff8a8a; }
+      .stopped { font-size: 0.8em; opacity: 0.5; }
+      #listen.on { background: rgba(255, 80, 80, 0.45); }
+      #transcript {
+        display: none; max-height: 35%; overflow-y: auto; margin: 0 0 8px; padding: 6px 8px;
+        border-radius: 8px; background: rgba(0, 0, 0, 0.3); font-size: 0.75em; line-height: 1.4;
+      }
+      #transcript:not(:empty) { display: block; }
+      #transcript .me b { color: #b4a5ff; }
+      #transcript .them b { color: #8fd3c8; }
       #ask-form { display: none; margin-top: 8px; }
       body.interactive #ask-form { display: block; }
-      #ask-input {
+      input, select {
         box-sizing: border-box; width: 100%; font: inherit; color: inherit;
         background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15);
         border-radius: 8px; padding: 6px 10px; outline: none;
       }
-      #ask-input:focus { border-color: rgba(124, 92, 255, 0.9); }
+      select {
+        color: #eee;
+        background-color: rgba(255, 255, 255, 0.08);
+        color-scheme: dark;
+        appearance: auto;
+      }
+      select option { background: #1c1c22; color: #eee; }
+      input:focus, select:focus { border-color: rgba(124, 92, 255, 0.9); }
+      input[type="range"] { padding: 0; border: 0; background: none; accent-color: #7c5cff; }
+      #settings { display: none; flex: 1; min-height: 0; overflow-y: auto; padding-right: 30px; }
+      body.settings #settings { display: block; }
+      body.settings #history, body.settings #transcript, body.settings #ask-form { display: none; }
+      #settings label { display: block; margin: 0 0 12px; font-size: 0.875em; }
+      #settings label > span { display: block; opacity: 0.7; margin-bottom: 4px; }
+      #settings .row { display: flex; gap: 8px; align-items: center; }
+      #settings-status { font-size: 0.8em; opacity: 0.7; }
+      #resize {
+        position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px;
+        cursor: nwse-resize; opacity: 0.35;
+        background: linear-gradient(135deg, transparent 55%, #fff 55%, #fff 62%, transparent 62%,
+          transparent 72%, #fff 72%, #fff 79%, transparent 79%);
+      }
+      #resize:hover { opacity: 0.8; }
+      body.fullscreen #resize { display: none; }
     </style>
   </head>
   <body>
@@ -60,89 +113,357 @@
         <span class="controls">
           <span id="mode">Click-through</span>
           <button id="ask" title="Ask about screen">Ask</button>
-          <button data-cmd="fullscreen" id="fullscreen" title="Fullscreen">⤢</button>
-          <button data-cmd="toggle" title="Hide">✕</button>
+          <button data-cmd="listen" id="listen" class="icon" title="Listen (live transcript)">🎙</button>
+          <button id="settings-btn" class="icon" title="Settings">⚙</button>
+          <button data-cmd="fullscreen" id="fullscreen" class="icon" title="Fullscreen">⤢</button>
+          <button id="minimize" class="icon" title="Hide to tray (keep running)">↘</button>
+          <button data-cmd="toggle" class="icon" title="Hide">✕</button>
         </span>
       </header>
-      <p id="question"></p>
-      <div id="answer">Click <b>Ask</b> or run <code>invisible-ai ask [question]</code></div>
+      <div id="transcript"></div>
+      <div id="history"><div class="entry" id="hint"><div class="a">Click <b>Ask</b> or run <code>invisible-ai ask [question]</code></div></div></div>
+      <form id="settings">
+        <label><span>Provider</span><select id="provider"></select></label>
+        <label><span>Model</span><input id="model" autocomplete="off" /></label>
+        <label><span>Default question (asked when you send nothing)</span><input id="default-question" autocomplete="off" /></label>
+        <div class="row" style="margin-bottom: 16px">
+          <button type="submit">Save</button>
+          <span id="settings-status"></span>
+        </div>
+        <label><span>Background opacity: <b id="alpha-value"></b></span><input id="alpha" type="range" min="0.2" max="1" step="0.02" /></label>
+        <label><span>Text size: <b id="font-value"></b></span><input id="font" type="range" min="12" max="24" step="1" /></label>
+        <div class="row">
+          <button type="button" id="clear">Clear history</button>
+          <button type="button" id="settings-close">Done</button>
+        </div>
+      </form>
       <form id="ask-form">
         <input id="ask-input" autocomplete="off"
                placeholder="Ask about your screen… (Enter to send, Esc to cancel)" />
       </form>
+      <div id="resize" title="Resize"></div>
     </div>
     <script>
       const { listen } = window.__TAURI__.event;
       const { invoke } = window.__TAURI__.core;
 
+      // Run an app command; show failures in the panel instead of dropping them.
+      function run(cmd) {
+        return invoke("run", { cmd }).catch((e) => showError(String(e)));
+      }
+
+      // localStorage can be unavailable; everything works without it, just unsaved.
+      function load(key, fallback) {
+        try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
+      }
+      function store(key, value) {
+        try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+      }
+
+      // In click-through mode only the header and the right-edge strip get the mouse;
+      // the wheel there scrolls the history.
+      document.addEventListener("wheel", (e) => {
+        if (e.target.closest("#history, #transcript, #settings")) return; // native scrolling
+        history.scrollBy({ top: e.deltaY });
+      }, { passive: true });
+
+      // Follow new text while an answer streams, unless the user scrolled up to read.
+      let follow = true;
+      const nearBottom = () => history.scrollHeight - history.scrollTop - history.clientHeight < 40;
+      document.addEventListener("wheel", (e) => {
+        if (e.deltaY < 0) follow = false;
+        else setTimeout(() => { if (nearBottom()) follow = true; }, 50);
+      }, { passive: true });
+
+      // Drag the header to move the panel, the corner to resize it. The panel changes
+      // under the pointer, so the offset from where the drag started is what's left to go.
+      function draggable(el, verb, skip) {
+        let start = null, busy = false;
+        el.addEventListener("pointerdown", (e) => {
+          if (e.button !== 0 || (skip && e.target.closest(skip))) return;
+          start = { x: e.clientX, y: e.clientY };
+          el.setPointerCapture(e.pointerId);
+        });
+        el.addEventListener("pointermove", async (e) => {
+          if (!start || busy) return;
+          const dx = Math.round(e.clientX - start.x), dy = Math.round(e.clientY - start.y);
+          if (!dx && !dy) return;
+          busy = true; // one step at a time, or the deltas add up twice
+          await run(`${verb} ${dx} ${dy}`);
+          requestAnimationFrame(() => (busy = false));
+        });
+        const end = () => (start = null);
+        el.addEventListener("pointerup", end);
+        el.addEventListener("pointercancel", end);
+      }
+      draggable(document.querySelector("header"), "move", "button");
+      const resizeHandle = document.getElementById("resize");
+      draggable(resizeHandle, "resize");
+
       for (const button of document.querySelectorAll("button[data-cmd]")) {
-        button.addEventListener("click", () => invoke("run", { cmd: button.dataset.cmd }));
+        button.addEventListener("click", () => run(button.dataset.cmd));
       }
 
       // Ask: switch to interactive and type a question; Enter sends it with a
       // screenshot (empty = default question) and returns to click-through.
+      // While an answer streams, the button stops it instead.
+      const askButton = document.getElementById("ask");
       const askInput = document.getElementById("ask-input");
       const isInteractive = () => document.body.classList.contains("interactive");
-      document.getElementById("ask").addEventListener("click", () => {
-        if (isInteractive()) askInput.focus();
-        else invoke("run", { cmd: "interact" });
+      askButton.addEventListener("click", () => {
+        if (askButton.classList.contains("stop")) run("stop");
+        else if (isInteractive()) askInput.focus();
+        else run("interact");
       });
+      function setStreaming(on) {
+        askButton.classList.toggle("stop", on);
+        askButton.textContent = on ? "Stop" : "Ask";
+        askButton.title = on ? "Stop the answer" : "Ask about screen";
+      }
       document.getElementById("ask-form").addEventListener("submit", async (e) => {
         e.preventDefault();
         const text = askInput.value.trim();
         askInput.value = "";
-        await invoke("run", { cmd: "interact" });
-        invoke("run", { cmd: text ? `ask ${text}` : "ask" });
+        await run("interact");
+        run(text ? `ask ${text}` : "ask");
       });
       askInput.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
           askInput.value = "";
-          invoke("run", { cmd: "interact" });
+          run("interact");
         }
       });
 
+      const transcript = document.getElementById("transcript");
+      listen("listening", ({ payload }) => {
+        document.getElementById("listen").classList.toggle("on", payload);
+        document.getElementById("listen").title = payload ? "Stop listening" : "Listen (live transcript)";
+      });
+      listen("transcript", ({ payload: { speaker, text } }) => {
+        const line = document.createElement("div");
+        line.className = speaker;
+        line.append(Object.assign(document.createElement("b"), { textContent: speaker === "me" ? "Me: " : "Them: " }), text);
+        transcript.append(line);
+        while (transcript.childElementCount > 200) transcript.firstElementChild.remove();
+        transcript.scrollTop = transcript.scrollHeight;
+      });
+
       listen("fullscreen", ({ payload }) => {
+        document.body.classList.toggle("fullscreen", payload);
         document.getElementById("fullscreen").textContent = payload ? "⤡" : "⤢";
         document.getElementById("fullscreen").title = payload ? "Exit fullscreen" : "Fullscreen";
       });
-      const question = document.getElementById("question");
-      const answer = document.getElementById("answer");
+
+      // Copy via the app (wl-copy / xclip): works in click-through mode, without focus.
+      function copyButton(getText, title) {
+        const button = Object.assign(document.createElement("button"), {
+          type: "button", className: "copy", textContent: "⧉", title,
+        });
+        button.addEventListener("click", async () => {
+          try {
+            await invoke("copy_text", { text: getText() });
+            button.textContent = "✓";
+          } catch (e) {
+            button.textContent = "!";
+            button.title = String(e);
+          }
+          setTimeout(() => (button.textContent = "⧉"), 1200);
+        });
+        return button;
+      }
+
+      // Q&A history: each ask adds an entry; the last 20 are kept, also across restarts.
+      const MAX_ENTRIES = 20;
+      const history = document.getElementById("history");
+      let entries = load("history", []); // [{ q, a, error?, stopped? }]
+      let answer = history.querySelector(".a"), current = null;
+      function newEntry(record) {
+        document.getElementById("hint")?.remove();
+        const entry = document.createElement("div");
+        entry.className = "entry";
+        if (record.q) entry.append(Object.assign(document.createElement("p"), { className: "q", textContent: record.q }));
+        answer = Object.assign(document.createElement("div"), { className: "a" });
+        entry.append(answer, copyButton(() => record.a, "Copy answer"));
+        history.append(entry);
+        while (history.childElementCount > MAX_ENTRIES) history.firstElementChild.remove();
+        follow = true;
+        history.scrollTop = history.scrollHeight;
+      }
+      function saveHistory() {
+        entries = entries.slice(-MAX_ENTRIES);
+        store("history", entries);
+      }
+      function showError(text) {
+        const record = { q: "", a: text, error: true };
+        entries.push(record);
+        saveHistory();
+        newEntry(record);
+        answer.textContent = text;
+        answer.className = "a error";
+      }
 
       // Answers are Markdown from a remote model: sanitize before inserting, since
       // this page can call app commands.
+      // While streaming: re-render at most every 100 ms, without highlighting (it gets
+      // slow on long answers); highlight code and add copy buttons once it's done.
       let raw = "", frame = 0;
-      function render() {
+      function render(final = false) {
+        clearTimeout(frame);
         frame = 0;
         answer.innerHTML = DOMPurify.sanitize(marked.parse(raw));
-        answer.querySelectorAll("pre code").forEach((el) => hljs.highlightElement(el));
-        answer.scrollTop = answer.scrollHeight;
+        if (final) {
+          for (const code of answer.querySelectorAll("pre code")) {
+            hljs.highlightElement(code);
+            code.parentElement.append(copyButton(() => code.textContent, "Copy code"));
+          }
+        }
+        if (follow) history.scrollTop = history.scrollHeight;
       }
+      function finish(note) {
+        render(true);
+        answer.className = "a";
+        if (note) answer.append(Object.assign(document.createElement("div"), { className: "stopped", textContent: note }));
+        setStreaming(false);
+      }
+
+      // Restore saved history.
+      for (const record of entries) {
+        newEntry(record);
+        if (record.error) {
+          answer.textContent = record.a;
+          answer.className = "a error";
+        } else {
+          raw = record.a;
+          finish(record.stopped ? "(stopped)" : "");
+        }
+      }
+      raw = "";
 
       listen("interactive", ({ payload }) => {
         document.body.classList.toggle("interactive", payload);
         document.getElementById("mode").textContent = payload ? "Interactive" : "Click-through";
-        if (payload) askInput.focus();
+        if (payload && !document.body.classList.contains("settings")) askInput.focus();
+        if (!payload) closeSettings(false);
       });
 
       listen("answer", ({ payload: { kind, text } }) => {
         if (kind === "start") {
-          question.textContent = text;
+          clearTimeout(frame);
+          frame = 0;
           raw = "";
-          answer.textContent = "";
-          answer.className = "pending";
+          current = { q: text, a: "" };
+          entries.push(current);
+          newEntry(current);
+          answer.className = "a pending";
+          setStreaming(true);
         } else if (kind === "delta") {
           raw += text;
-          frame ||= requestAnimationFrame(render); // re-render at most once per frame
+          current.a = raw;
+          frame ||= setTimeout(render, 100);
         } else if (kind === "done") {
-          render();
-          answer.className = "";
+          finish("");
+          saveHistory();
+        } else if (kind === "stopped") {
+          if (!current) return setStreaming(false);
+          current.stopped = true;
+          finish("(stopped)");
+          saveHistory();
+          current = null;
         } else if (kind === "error") {
-          cancelAnimationFrame(frame);
+          clearTimeout(frame);
           frame = 0;
-          answer.textContent = text;
-          answer.className = "error";
+          setStreaming(false);
+          if (answer.classList.contains("pending")) {
+            answer.textContent = text;
+            answer.className = "a error";
+            Object.assign(current, { a: text, error: true });
+            saveHistory();
+          } else {
+            showError(text);
+          }
         }
       });
+
+      listen("cleared", () => {
+        entries = [];
+        saveHistory();
+        history.replaceChildren();
+      });
+
+      // Look: background opacity and text size, per viewer, applied immediately.
+      const alpha = document.getElementById("alpha"), font = document.getElementById("font");
+      function applyLook() {
+        document.documentElement.style.setProperty("--alpha", alpha.value);
+        document.documentElement.style.setProperty("--font", `${font.value}px`);
+        document.getElementById("alpha-value").textContent = `${Math.round(alpha.value * 100)}%`;
+        document.getElementById("font-value").textContent = `${font.value}px`;
+        store("look", { alpha: alpha.value, font: font.value });
+      }
+      const look = load("look", {});
+      alpha.value = look.alpha ?? 0.78;
+      font.value = look.font ?? 16;
+      applyLook();
+      alpha.addEventListener("input", applyLook);
+      font.addEventListener("input", applyLook);
+
+      // Settings: provider, model and default question live in config.toml. Typing needs
+      // interactive mode, so opening the view switches to it and closing switches back.
+      const settingsForm = document.getElementById("settings");
+      const providerSelect = document.getElementById("provider");
+      const modelInput = document.getElementById("model");
+      const questionInput = document.getElementById("default-question");
+      const status = document.getElementById("settings-status");
+      let models = {}, enteredInteractive = false;
+      async function openSettings() {
+        status.textContent = "";
+        try {
+          const settings = await invoke("get_settings");
+          models = Object.fromEntries(settings.providers);
+          providerSelect.replaceChildren(...settings.providers.map(([name]) => new Option(name, name)));
+          providerSelect.value = settings.provider;
+          modelInput.value = models[settings.provider];
+          questionInput.value = settings.default_question;
+        } catch (e) {
+          status.textContent = String(e);
+        }
+        document.body.classList.add("settings");
+        if (!isInteractive()) {
+          enteredInteractive = true;
+          await run("interact");
+        }
+      }
+      function closeSettings(restoreMode = true) {
+        if (!document.body.classList.contains("settings")) return;
+        document.body.classList.remove("settings");
+        if (restoreMode && enteredInteractive && isInteractive()) run("interact");
+        enteredInteractive = false;
+      }
+      document.getElementById("settings-btn").addEventListener("click", () => {
+        if (document.body.classList.contains("settings")) closeSettings();
+        else openSettings();
+      });
+      document.getElementById("settings-close").addEventListener("click", () => closeSettings());
+      providerSelect.addEventListener("change", () => (modelInput.value = models[providerSelect.value]));
+      settingsForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          await invoke("save_settings", {
+            changes: { provider: providerSelect.value, model: modelInput.value, default_question: questionInput.value },
+          });
+          models[providerSelect.value] = modelInput.value.trim();
+          status.textContent = "Saved";
+        } catch (err) {
+          status.textContent = String(err);
+        }
+      });
+      settingsForm.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeSettings();
+      });
+      document.getElementById("clear").addEventListener("click", () => run("clear"));
+
+      // Hide to tray: same as the toggle hotkey. The app keeps running (control socket,
+      // tray menu, whisper-server).
+      document.getElementById("minimize").addEventListener("click", () => run("toggle"));
     </script>
   </body>
 </html>

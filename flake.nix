@@ -50,7 +50,7 @@
             clippy
             rust-analyzer
             cargo-tauri
-            rustPlatform.bindgenHook # libclang + libc headers for bindgen (pipewire, whisper-rs)
+            rustPlatform.bindgenHook # libclang + libc headers for bindgen (pipewire, via xcap)
             cmake # whisper.cpp build
           ];
 
