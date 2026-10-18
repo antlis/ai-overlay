@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, Ordering};
 
 use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
@@ -10,6 +10,9 @@ const HEADER_HEIGHT: f64 = 40.0;
 const SCROLL_STRIP: f64 = 56.0;
 /// Smallest compact panel (logical px).
 const MIN_SIZE: (i32, i32) = (300, 160);
+/// How long a resize/drag has to go quiet before the layer surface is remapped to its
+/// new size (remapping is the only way GTK resizes it, but it drops the pointer grab).
+const REMAP_DELAY: std::time::Duration = std::time::Duration::from_millis(140);
 
 /// Interactive: receives clicks and keyboard focus. Otherwise click-through.
 static INTERACTIVE: AtomicBool = AtomicBool::new(false);
@@ -26,6 +29,13 @@ static POS_Y: AtomicI32 = AtomicI32::new(i32::MIN);
 /// Wayland only: compact panel's size (logical px) once resized; 0 = configured size.
 static WIDTH: AtomicI32 = AtomicI32::new(0);
 static HEIGHT: AtomicI32 = AtomicI32::new(0);
+/// Wayland only: size the layer surface was last mapped at (packed width<<32|height),
+/// whether the surface is currently mapped, and whether a remap is already queued. GTK
+/// never resizes a mapped layer surface, so a size change has to hide + show the window;
+/// these keep a drag to one remap and stop the first map from counting as one.
+static MAPPED_SIZE: AtomicI64 = AtomicI64::new(0);
+static MAPPED: AtomicBool = AtomicBool::new(false);
+static REMAP_QUEUED: AtomicBool = AtomicBool::new(false);
 
 /// Compact panel size: resized, else as configured in tauri.conf.json.
 fn size(window: &WebviewWindow) -> (i32, i32) {
@@ -136,6 +146,7 @@ pub fn setup(window: &WebviewWindow) -> tauri::Result<()> {
                 use gtk::prelude::WidgetExt;
                 if let Some(layer) = toplevel(&w) {
                     layer.show_all();
+                    MAPPED.store(true, Ordering::SeqCst);
                 }
             })?;
             SHOWN.store(true, Ordering::SeqCst);
@@ -201,7 +212,15 @@ pub fn set_visible(window: &WebviewWindow, visible: bool) -> tauri::Result<()> {
         return window.run_on_main_thread(move || {
             use gtk::prelude::WidgetExt;
             if let Some(layer) = toplevel(&w) {
-                if visible { layer.show_all() } else { layer.hide() }
+                if visible {
+                    layer.show_all();
+                    MAPPED.store(true, Ordering::SeqCst);
+                } else {
+                    layer.hide();
+                    MAPPED.store(false, Ordering::SeqCst);
+                    // The next show maps fresh, so any size then is a change again.
+                    MAPPED_SIZE.store(0, Ordering::SeqCst);
+                }
             }
         });
     }
@@ -329,24 +348,64 @@ fn place(window: &WebviewWindow) -> tauri::Result<()> {
         let w = window.clone();
         return window.run_on_main_thread(move || {
             use gtk_layer_shell::{Edge, LayerShell};
+            use gtk::prelude::{GtkWindowExt, WidgetExt};
             let Some(layer) = toplevel(&w) else { return };
             let Some(screen) = monitor_geometry(&layer) else { return };
-            // Anchored to all edges, so the compositor sets the size from the margins:
-            // GTK won't shrink a mapped layer surface on request.
+            // Layer surfaces are positioned by margins, and their size comes from the
+            // buffer GTK commits (anchoring both opposite edges would let the compositor
+            // stretch it instead, which it never re-does for a mapped surface).
             let (mut x, mut y) = (POS_X.load(Ordering::SeqCst), POS_Y.load(Ordering::SeqCst));
             if x == i32::MIN {
                 (x, y) = ((screen.width() - width) / 2, TOP_MARGIN);
             }
             for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
-                layer.set_anchor(edge, true);
-                let margin = match edge {
-                    _ if fullscreen => TOP_MARGIN,
-                    Edge::Top => y,
-                    Edge::Left => x,
-                    Edge::Bottom => screen.height() - y - height,
-                    _ => screen.width() - x - width,
+                let (anchor, margin) = match edge {
+                    _ if fullscreen => (true, TOP_MARGIN),
+                    Edge::Top => (true, y),
+                    Edge::Left => (true, x),
+                    Edge::Bottom => (false, 0),
+                    _ => (false, 0),
                 };
+                layer.set_anchor(edge, anchor);
                 layer.set_layer_shell_margin(edge, margin.max(0));
+            }
+            // GTK won't shrink a mapped window on its own. The documented recipe: a size
+            // request on the layer window itself, then gtk_window_resize(1, 1) to force
+            // GTK to honour it (ignored on axes anchored to two opposite edges).
+            let (width, height) = if fullscreen {
+                ((screen.width() - 2 * TOP_MARGIN).max(1), (screen.height() - 2 * TOP_MARGIN).max(1))
+            } else {
+                (width.max(1), height.max(1))
+            };
+            layer.set_size_request(width, height);
+            layer.resize(1, 1);
+            // GTK never resizes a mapped layer surface (its size is whatever the first
+            // configure settled on), so the only way to change it is to remap: hide
+            // destroys the layer surface, the next show creates it at the new size.
+            // Remapping kills the pointer grab, so a drag would break after one step:
+            // changes are debounced instead, and the pending remap applies whatever the
+            // latest margins are when it finally fires.
+            let key = (i64::from(width) << 32) | i64::from(height);
+            if !MAPPED.load(Ordering::SeqCst) {
+                MAPPED_SIZE.store(key, Ordering::SeqCst);
+            } else if MAPPED_SIZE.swap(key, Ordering::SeqCst) != key && !REMAP_QUEUED.swap(true, Ordering::SeqCst) {
+                let w2 = w.clone();
+                gtk::glib::timeout_add_local(REMAP_DELAY, move || {
+                    REMAP_QUEUED.store(false, Ordering::SeqCst);
+                    if MAPPED.load(Ordering::SeqCst) {
+                        if let Some(layer) = toplevel(&w2) {
+                            layer.hide();
+                            let w3 = w2.clone();
+                            gtk::glib::idle_add_local(move || {
+                                if let Some(layer) = toplevel(&w3) {
+                                    layer.show_all();
+                                }
+                                gtk::glib::ControlFlow::Break
+                            });
+                        }
+                    }
+                    gtk::glib::ControlFlow::Break
+                });
             }
         });
     }

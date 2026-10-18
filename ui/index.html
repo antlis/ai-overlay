@@ -199,24 +199,35 @@
         else setTimeout(() => { if (nearBottom()) follow = true; }, 50);
       }, { passive: true });
 
-      // Drag the header to move the panel, the corner to resize it. The panel changes
-      // under the pointer, so the offset from where the drag started is what's left to go.
+      // Drag the header to move the panel, the corner to resize it. The backend's
+      // move/resize are relative, so the deltas are too: measuring from where the drag
+      // started would only be right for move (the panel chases the pointer, so the offset
+      // resets itself each step) and would square the drag for resize (top-left stays put).
       function draggable(el, verb, skip) {
-        let start = null, busy = false;
+        let last = null, busy = false;
+        const queued = { x: 0, y: 0 };
+        async function flush() {
+          if (busy || (!queued.x && !queued.y)) return;
+          busy = true; // one step at a time, so replies can't land out of order
+          const dx = queued.x, dy = queued.y;
+          queued.x = queued.y = 0;
+          await run(`${verb} ${dx} ${dy}`);
+          busy = false;
+          flush(); // anything queued while that step was in flight
+        }
         el.addEventListener("pointerdown", (e) => {
           if (e.button !== 0 || (skip && e.target.closest(skip))) return;
-          start = { x: e.clientX, y: e.clientY };
+          last = { x: e.clientX, y: e.clientY };
           el.setPointerCapture(e.pointerId);
         });
-        el.addEventListener("pointermove", async (e) => {
-          if (!start || busy) return;
-          const dx = Math.round(e.clientX - start.x), dy = Math.round(e.clientY - start.y);
-          if (!dx && !dy) return;
-          busy = true; // one step at a time, or the deltas add up twice
-          await run(`${verb} ${dx} ${dy}`);
-          requestAnimationFrame(() => (busy = false));
+        el.addEventListener("pointermove", (e) => {
+          if (!last) return;
+          queued.x += Math.round(e.clientX - last.x);
+          queued.y += Math.round(e.clientY - last.y);
+          last = { x: e.clientX, y: e.clientY };
+          flush();
         });
-        const end = () => (start = null);
+        const end = () => { last = null; flush(); }; // the last few pixels still count
         el.addEventListener("pointerup", end);
         el.addEventListener("pointercancel", end);
       }
