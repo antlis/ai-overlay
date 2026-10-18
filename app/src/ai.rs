@@ -68,7 +68,7 @@ impl Config {
 }
 
 impl Provider {
-    fn api_key(&self) -> Result<String, String> {
+    pub fn api_key(&self) -> Result<String, String> {
         if let Some(key) = self.api_key_env.as_deref().and_then(|v| std::env::var(v).ok()) {
             if !key.is_empty() {
                 return Ok(key);

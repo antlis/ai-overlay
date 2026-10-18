@@ -95,7 +95,17 @@
       #settings label { display: block; margin: 0 0 12px; font-size: 0.875em; }
       #settings label > span { display: block; opacity: 0.7; margin-bottom: 4px; }
       #settings .row { display: flex; gap: 8px; align-items: center; }
+      #settings label[hidden] { display: none; }
+      #settings .field { margin: 0 0 12px; font-size: 0.875em; }
+      #settings .field-label { display: block; opacity: 0.7; margin-bottom: 4px; }
       #settings-status { font-size: 0.8em; opacity: 0.7; }
+      #hotkeys { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 8px 10px 6px; margin: 4px 0 12px; font-size: 0.8em; }
+      #hotkeys legend { padding: 0 6px; opacity: 0.7; font-size: 0.95em; }
+      .hk { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+      .hk code { flex: 0 0 auto; min-width: 92px; opacity: 0.9; }
+      .hk span { flex: 1; opacity: 0.75; }
+      .hk .icon { flex: 0 0 auto; }
+      .hk-note { opacity: 0.6; margin: 8px 0 4px; line-height: 1.5; }
       #resize {
         position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px;
         cursor: nwse-resize; opacity: 0.35;
@@ -124,7 +134,13 @@
       <div id="history"><div class="entry" id="hint"><div class="a">Click <b>Ask</b> or run <code>invisible-ai ask [question]</code></div></div></div>
       <form id="settings">
         <label><span>Provider</span><select id="provider"></select></label>
-        <label><span>Model</span><input id="model" autocomplete="off" /></label>
+        <div class="field"><span class="field-label">Model</span>
+          <div class="row" style="gap: 6px">
+            <select id="model" style="flex: 1; min-width: 0"></select>
+            <button type="button" id="model-refresh" class="icon" title="Reload the model list from the provider">⟳</button>
+          </div>
+        </div>
+        <label id="model-custom-row" hidden><span>Model (not in the list — type any id)</span><input id="model-custom" autocomplete="off" /></label>
         <label><span>Default question (asked when you send nothing)</span><input id="default-question" autocomplete="off" /></label>
         <div class="row" style="margin-bottom: 16px">
           <button type="submit">Save</button>
@@ -136,6 +152,14 @@
           <button type="button" id="clear">Clear history</button>
           <button type="button" id="settings-close">Done</button>
         </div>
+        <fieldset id="hotkeys">
+          <legend>Hotkeys (from your WM config)</legend>
+          <div class="hk"><code>Mod+\</code><span>show / hide (starts the app if it isn't running)</span><button type="button" class="icon" data-copy="invisible-ai toggle" title="Copy command">⧉</button></div>
+          <div class="hk"><code>Mod+Shift+\</code><span>interact (click and type in the panel)</span><button type="button" class="icon" data-copy="invisible-ai interact" title="Copy command">⧉</button></div>
+          <div class="hk"><code>Mod+/</code><span>keybinding cheatsheet (rofi)</span></div>
+          <div class="hk"><code>Mod+Shift+/</code><span>all keybindings</span></div>
+          <p class="hk-note">Bindings live in the WM config — <code>~/.config/niri/config.kdl</code> (Niri) or <code>~/.config/i3/config</code> (i3). ⧉ copies the command to paste into a new binding. Any <code>invisible-ai &lt;command&gt;</code> works from a shell.</p>
+        </fieldset>
       </form>
       <form id="ask-form">
         <input id="ask-input" autocomplete="off"
@@ -271,6 +295,21 @@
         });
         return button;
       }
+
+      // Static ⧉ buttons (settings → hotkeys) copy their data-copy payload.
+      document.addEventListener("click", async (e) => {
+        const el = e.target.closest("[data-copy]");
+        if (!el) return;
+        const original = el.textContent;
+        try {
+          await invoke("copy_text", { text: el.dataset.copy });
+          el.textContent = "✓";
+        } catch (err) {
+          el.textContent = "!";
+          el.title = String(err);
+        }
+        setTimeout(() => (el.textContent = original), 1200);
+      });
 
       // Q&A history: each ask adds an entry; the last 20 are kept, also across restarts.
       const MAX_ENTRIES = 20;
@@ -408,21 +447,57 @@
 
       // Settings: provider, model and default question live in config.toml. Typing needs
       // interactive mode, so opening the view switches to it and closing switches back.
+      // The model picker is fed from GET {base_url}/models (24 h disk cache, ⟳ refetches);
+      // "Other…" keeps a free-text field for ids the catalog doesn't list.
       const settingsForm = document.getElementById("settings");
       const providerSelect = document.getElementById("provider");
-      const modelInput = document.getElementById("model");
+      const modelSelect = document.getElementById("model");
+      const modelCustomRow = document.getElementById("model-custom-row");
+      const modelCustom = document.getElementById("model-custom");
       const questionInput = document.getElementById("default-question");
       const status = document.getElementById("settings-status");
-      let models = {}, enteredInteractive = false;
+      let configured = {}, modelLists = {}, customModel = false, enteredInteractive = false;
+
+      function paintModels() {
+        const name = providerSelect.value;
+        const list = modelLists[name] || [];
+        const want = configured[name] || "";
+        const known = list.includes(want);
+        const opts = list.map((id) => new Option(id, id));
+        if (want && !known && list.length) opts.push(new Option(`${want} (configured)`, want));
+        opts.push(new Option(list.length ? "Other… (type a model id)" : "No catalog — type the model id below", "__custom__"));
+        modelSelect.replaceChildren(...opts);
+        if (want && (known || list.length)) modelSelect.value = want;
+        else modelSelect.value = "__custom__";
+        // A catalog arriving later shouldn't override an explicit "Other…" choice.
+        if (customModel && list.length) modelSelect.value = "__custom__";
+        if (modelSelect.value !== "__custom__") customModel = false;
+        modelCustom.value = want;
+        modelCustomRow.hidden = modelSelect.value !== "__custom__";
+      }
+
+      async function loadModels(name, force = false) {
+        if (force) status.textContent = "Loading models…";
+        try {
+          modelLists[name] = await invoke(force ? "refresh_models" : "list_models", { provider: name });
+        } catch (e) {
+          modelLists[name] = []; // offline / bad key: fall back to the free-text field
+        }
+        paintModels();
+        if (force) status.textContent = modelLists[name].length ? `${modelLists[name].length} models` : "No models returned";
+      }
+
       async function openSettings() {
         status.textContent = "";
         try {
           const settings = await invoke("get_settings");
-          models = Object.fromEntries(settings.providers);
+          configured = Object.fromEntries(settings.providers);
           providerSelect.replaceChildren(...settings.providers.map(([name]) => new Option(name, name)));
           providerSelect.value = settings.provider;
-          modelInput.value = models[settings.provider];
+          customModel = false;
+          paintModels();
           questionInput.value = settings.default_question;
+          if (!modelLists[settings.provider]) loadModels(settings.provider);
         } catch (e) {
           status.textContent = String(e);
         }
@@ -443,14 +518,31 @@
         else openSettings();
       });
       document.getElementById("settings-close").addEventListener("click", () => closeSettings());
-      providerSelect.addEventListener("change", () => (modelInput.value = models[providerSelect.value]));
+      providerSelect.addEventListener("change", () => {
+        customModel = false;
+        paintModels();
+        if (!modelLists[providerSelect.value]) loadModels(providerSelect.value);
+      });
+      modelSelect.addEventListener("change", () => {
+        customModel = modelSelect.value === "__custom__";
+        modelCustomRow.hidden = !customModel;
+        if (customModel) modelCustom.focus();
+      });
+      document.getElementById("model-refresh").addEventListener("click", () => loadModels(providerSelect.value, true));
       settingsForm.addEventListener("submit", async (e) => {
         e.preventDefault();
+        const model = (modelSelect.value === "__custom__" ? modelCustom.value : modelSelect.value).trim();
         try {
           await invoke("save_settings", {
-            changes: { provider: providerSelect.value, model: modelInput.value, default_question: questionInput.value },
+            changes: { provider: providerSelect.value, model, default_question: questionInput.value },
           });
-          models[providerSelect.value] = modelInput.value.trim();
+          configured[providerSelect.value] = model;
+          if (modelLists[providerSelect.value] && !modelLists[providerSelect.value].includes(model)) {
+            modelLists[providerSelect.value].push(model);
+            modelLists[providerSelect.value].sort();
+          }
+          customModel = false;
+          paintModels();
           status.textContent = "Saved";
         } catch (err) {
           status.textContent = String(err);

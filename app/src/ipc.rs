@@ -12,12 +12,13 @@ pub fn socket_path() -> PathBuf {
 }
 
 /// Send one command to the running instance and return its reply.
+/// Reply lines may be multi-line (lists); the server joins them with `\0`.
 pub fn send(cmd: &str) -> io::Result<String> {
     let mut stream = UnixStream::connect(socket_path())?;
     writeln!(stream, "{cmd}")?;
     let mut reply = String::new();
     BufReader::new(stream).read_line(&mut reply)?;
-    Ok(reply.trim_end().to_owned())
+    Ok(reply.trim_end_matches('\0').trim_end_matches('\n').to_owned())
 }
 
 /// Bind the control socket, refusing to start if another instance is listening.
@@ -48,7 +49,12 @@ where
             }
             let reply = match handle(line.trim()) {
                 Ok(out) if out.is_empty() => "ok".to_owned(),
-                Ok(out) => format!("ok {out}"),
+                Ok(out) => {
+                    // Multi-line outputs (lists) are joined on NUL so the client can
+                    // round-trip them through BufReader::read_line.
+                    let out = out.replace('\0', " ").replace('\n', "\0");
+                    format!("ok {out}")
+                }
                 Err(e) => format!("error: {e}"),
             };
             let _ = writeln!(&stream, "{reply}");

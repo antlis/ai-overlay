@@ -96,7 +96,7 @@ fn main() -> ExitCode {
     }
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![run, get_settings, save_settings, copy_text])
+        .invoke_handler(tauri::generate_handler![run, get_settings, save_settings, copy_text, list_models, refresh_models])
         .setup(move |app| {
             let overlay = app
                 .get_webview_window("overlay")
@@ -134,6 +134,16 @@ fn get_settings() -> Result<settings::Settings, String> {
 #[tauri::command]
 fn save_settings(changes: settings::Changes) -> Result<(), String> {
     settings::save(changes)
+}
+
+#[tauri::command]
+fn list_models(provider: String) -> Result<Vec<String>, String> {
+    settings::models_for(&provider, false)
+}
+
+#[tauri::command]
+fn refresh_models(provider: String) -> Result<Vec<String>, String> {
+    settings::models_for(&provider, true)
 }
 
 #[tauri::command]
@@ -215,6 +225,16 @@ pub fn dispatch(app: &AppHandle, cmd: &str) -> Result<String, String> {
                 }
             })?;
             app.emit("listening", listening).map_err(|e| e.to_string())?;
+        }
+        "models" => {
+            let provider = rest.trim();
+            let models = settings::models_for(provider, false)?;
+            return Ok(models.join("\n"));
+        }
+        "refresh-models" => {
+            let provider = rest.trim();
+            let models = settings::models_for(provider, true)?;
+            return Ok(models.join("\n"));
         }
         "quit" => app.exit(0),
         _ => return Err(format!("unknown command '{cmd}' (expected {COMMANDS})")),

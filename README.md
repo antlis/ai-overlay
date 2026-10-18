@@ -39,6 +39,7 @@ command, sends it there:
 | `invisible-ai capture` | Screenshot the overlay's monitor (without the overlay); prints the PNG path (`$XDG_CACHE_HOME/invisible-ai/captures/`) |
 | `invisible-ai listen` | Start / stop the live transcript (mic = "Me", system audio = "Them") |
 | `invisible-ai ask [question]` | Screenshot + question → streamed answer in the overlay (default question: help with what's on screen) |
+| `invisible-ai models <provider>` | List the model ids a provider advertises (`refresh-models` refetches instead of reading the 24 h cache) |
 | `invisible-ai quit` | Exit |
 
 The same actions are in the **tray icon** menu and the panel header (Ask / fullscreen / hide),
@@ -58,6 +59,22 @@ binds {
     Mod+Shift+Backslash { spawn "/path/to/invisible-ai" "interact"; }
 }
 ```
+
+## Panel settings
+
+The ⚙ button opens the settings view (typing needs input, so it switches to interactive mode and
+back on close):
+
+- **Provider / model** — the model picker is a dropdown fed from the provider's own
+  `GET {base_url}/models` (cached on disk for a day under `~/.cache/invisible-ai/models/`,
+  ⟳ refetches). If the configured model isn't in the catalog it still shows as `… (configured)`,
+  and *Other…* keeps a free-text field for ids the catalog doesn't list. Providers without a
+  catalog (or when offline) fall back to typing.
+- **Default question** — asked when you send an empty prompt.
+- **Background opacity / text size** — live, persisted per machine in `localStorage`
+  (same for the answer history, last 20 entries).
+- **Hotkeys** — the bindings from your WM config, with a ⧉ button that copies the command to
+  paste into a new binding.
 
 ## Live transcript
 

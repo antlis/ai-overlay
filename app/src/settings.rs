@@ -1,5 +1,8 @@
 //! Settings the panel can change, written back to config.toml with its comments kept.
 
+use std::path::PathBuf;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 use serde::{Deserialize, Serialize};
 
 use crate::ai;
@@ -19,6 +22,8 @@ pub struct Changes {
     default_question: String,
 }
 
+const MODEL_CACHE_TTL: Duration = Duration::from_secs(86_400); // 1 day
+
 pub fn get() -> Result<Settings, String> {
     let config = ai::load_config()?;
     let mut providers: Vec<_> = config
@@ -35,6 +40,105 @@ pub fn get() -> Result<Settings, String> {
             .default_question
             .unwrap_or_else(|| crate::DEFAULT_QUESTION.to_owned()),
     })
+}
+
+/// Models advertised by `provider` (the part visible in the picker). Pulls them from the
+/// provider's `GET {base_url}/models`, caches the result per-provider on disk, and falls
+/// back to the cache when the live fetch fails (network down, key missing). `force` skips
+/// the cache. The empty list is meaningful: it tells the UI to show a free-text input.
+pub fn models_for(provider: &str, force: bool) -> Result<Vec<String>, String> {
+    let config = ai::load_config()?;
+    let p = config
+        .providers
+        .get(provider)
+        .ok_or_else(|| format!("provider '{provider}' not found"))?;
+    let cache = cache_path(provider);
+    if !force {
+        if let Some(ids) = read_cache(&cache) {
+            return Ok(ids);
+        }
+    }
+    let ids = match fetch_models(p) {
+        Ok(ids) => {
+            if let Some(dir) = cache.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let payload = serde_json::json!({
+                "fetched_at": SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+                "ids": &ids,
+            });
+            let _ = std::fs::write(&cache, payload.to_string());
+            ids
+        }
+        Err(_) => read_cache(&cache).unwrap_or_default(),
+    };
+    Ok(ids)
+}
+
+fn fetch_models(p: &ai::Provider) -> Result<Vec<String>, String> {
+    let url = format!("{}/models", p.base_url.trim_end_matches('/'));
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(5))
+        .timeout_read(Duration::from_secs(10))
+        .build();
+    let mut req = agent.get(&url);
+    // OpenAI-compatible endpoints may or may not require auth. Ollama doesn't.
+    if let Ok(key) = p.api_key() {
+        if !key.is_empty() && key != "ollama" {
+            req = req.set("Authorization", &format!("Bearer {key}"));
+        }
+    }
+    let response = req.call().map_err(|e| e.to_string())?;
+    let body = response.into_string().map_err(|e| e.to_string())?;
+    let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("{url}: {e}"))?;
+    let mut ids: Vec<String> = Vec::new();
+    // OpenAI-compatible: { "data": [{ "id": "..." }, ...] }
+    if let Some(arr) = v.get("data").and_then(|d| d.as_array()) {
+        for entry in arr {
+            if let Some(id) = entry.get("id").and_then(|i| i.as_str()) {
+                ids.push(id.to_owned());
+            }
+        }
+    }
+    // Ollama native shape: { "models": [{ "name": "...", ... }] }
+    if let Some(arr) = v.get("models").and_then(|d| d.as_array()) {
+        for entry in arr {
+            if let Some(name) = entry.get("name").and_then(|i| i.as_str()) {
+                ids.push(name.to_owned());
+            }
+        }
+    }
+    ids.sort();
+    ids.dedup();
+    Ok(ids)
+}
+
+fn cache_path(provider: &str) -> PathBuf {
+    let dir = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
+        .unwrap_or_else(std::env::temp_dir)
+        .join("invisible-ai/models");
+    dir.join(format!("{provider}.json"))
+}
+
+fn read_cache(path: &PathBuf) -> Option<Vec<String>> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let fetched_at = v.get("fetched_at")?.as_u64()?;
+    let age = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .saturating_sub(Duration::from_secs(fetched_at));
+    if age > MODEL_CACHE_TTL {
+        return None;
+    }
+    let arr = v.get("ids")?.as_array()?;
+    let ids: Vec<String> = arr.iter().filter_map(|i| i.as_str().map(String::from)).collect();
+    Some(ids)
 }
 
 /// Switch provider, set its model and the default question. An empty or built-in
