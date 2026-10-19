@@ -14,6 +14,8 @@ const MIN_SIZE: (i32, i32) = (300, 160);
 /// new size (remapping is the only way GTK resizes it, but it drops the pointer grab).
 const REMAP_DELAY: std::time::Duration = std::time::Duration::from_millis(140);
 
+/// X11: where the panel was when last hidden, restored on the next show.
+static HIDDEN_AT: std::sync::Mutex<Option<PhysicalPosition<i32>>> = std::sync::Mutex::new(None);
 /// Interactive: receives clicks and keyboard focus. Otherwise click-through.
 static INTERACTIVE: AtomicBool = AtomicBool::new(false);
 /// Fullscreen: covers the monitor (minus a margin) instead of the compact top-center panel.
@@ -185,9 +187,20 @@ fn connect_layout(window: &WebviewWindow, gtk_window: &gtk::Window) {
     let placed = AtomicBool::new(false);
     gtk_window.connect_map_event(move |_, _| {
         let _ = apply_mode(&w, INTERACTIVE.load(Ordering::SeqCst));
-        // Only the first time: later maps (show after hide) keep where the user put it.
-        if !WAYLAND.load(Ordering::SeqCst) && !placed.swap(true, Ordering::SeqCst) {
-            let _ = place(&w);
+        if !WAYLAND.load(Ordering::SeqCst) {
+            // Later maps go back to where the panel was hidden. GTK would restore that
+            // itself, but against i3's default frame, which the config then strips: the
+            // panel crept down (and right) by the frame size on every show.
+            let saved = *HIDDEN_AT.lock().unwrap();
+            match saved {
+                Some(pos) if placed.swap(true, Ordering::SeqCst) && !FULLSCREEN.load(Ordering::SeqCst) => {
+                    let _ = w.set_position(pos);
+                }
+                _ => {
+                    placed.store(true, Ordering::SeqCst);
+                    let _ = place(&w);
+                }
+            }
         }
         gtk::glib::Propagation::Proceed
     });
@@ -223,6 +236,9 @@ pub fn set_visible(window: &WebviewWindow, visible: bool) -> tauri::Result<()> {
                 }
             }
         });
+    }
+    if !visible {
+        *HIDDEN_AT.lock().unwrap() = window.outer_position().ok();
     }
     if visible { window.show() } else { window.hide() }
 }
