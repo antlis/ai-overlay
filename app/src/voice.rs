@@ -348,7 +348,14 @@ fn start(
                     0
                 }
             };
-            let Some((speaker, samples, _)) = queue.remove(next) else { continue };
+            let Some((speaker, samples, ended)) = queue.remove(next) else { continue };
+            // Recorded while the app was speaking an answer: that's our own voice (on the
+            // system audio, and in the mic on speakers). Don't transcribe or answer it.
+            let started = ended.checked_sub(Duration::from_secs_f64(samples.len() as f64 / RATE as f64)).unwrap_or(ended);
+            if crate::tts::overlaps(started, ended) {
+                eprintln!("[{speaker}] skipped: recorded while speaking");
+                continue;
+            }
             let _ = app.emit("voice", "transcribing");
             let mut result = transcribe(&url, &samples, &language());
             if result.is_err() {

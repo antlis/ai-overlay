@@ -35,3 +35,10 @@ api_key_cmd = "jq -r '.openrouter.key' ~/.local/share/opencode/auth.json"
 base_url = "http://127.0.0.1:11434/v1"
 model = "qwen2.5vl:7b"
 api_key_cmd = "echo ollama"
+
+# Spoken answers (speaker button / invisible-ai speak): local Piper voices, see README.
+# These are the defaults; the .onnx.json must sit next to each .onnx.
+# [speech]
+# en = "~/.local/share/invisible-ai/voices/en_US-lessac-medium.onnx"
+# ru = "~/.local/share/invisible-ai/voices/ru_RU-irina-medium.onnx"
+# length_scale = 1.0  # < 1 speaks faster, > 1 slower

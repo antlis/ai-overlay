@@ -26,6 +26,8 @@ pub struct Config {
     pub voice: crate::voice::VoiceConfig,
     #[serde(default)]
     pub ui: UiConfig,
+    #[serde(default)]
+    pub speech: crate::tts::SpeechConfig,
 }
 
 #[derive(Deserialize, Default)]

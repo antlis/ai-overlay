@@ -90,6 +90,13 @@
       #listen.on { animation: pulse 1.6s ease-in-out infinite; }
       @keyframes pulse { 50% { box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.25); } }
 
+      #speak .wave { display: none; }
+      #speak.on .wave { display: inline; }
+      #speak.on .mute { display: none; }
+      #speak.on { background: var(--accent-soft); color: #cbbfff; }
+      #speak.speaking { animation: pulse-accent 1.4s ease-in-out infinite; }
+      @keyframes pulse-accent { 50% { box-shadow: 0 0 0 4px rgba(139, 108, 255, 0.3); } }
+
       /* Live transcript */
       #transcript {
         display: none; max-height: 30%; overflow-y: auto; margin: 8px var(--gutter) 4px 0; padding: 8px 12px;
@@ -274,6 +281,7 @@
           <button id="ask" title="Ask about screen"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg><span>Ask</span></button>
           <button data-cmd="listen" id="listen" class="icon" title="Listen (live transcript)"><svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg></button>
           <button id="lang" title="Voice language (click to switch)">EN</button>
+          <button id="speak" class="icon" title="Spoken answers: off"><svg viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path class="wave" d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/><path class="mute" d="M22 9l-6 6M16 9l6 6"/></svg></button>
           <button data-cmd="clear" id="clear-all" class="icon" title="Clear everything (history, context, transcript)"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
           <button id="settings-btn" class="icon" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
           <button data-cmd="fullscreen" id="fullscreen" class="icon" title="Fullscreen"></button>
@@ -317,6 +325,7 @@
             <div class="hk"><span class="keys" data-keys="Mod+\"></span><span class="what">Show / hide <small>starts the app if it isn't running</small></span><button type="button" class="icon" data-copy="invisible-ai toggle" title="Copy command: invisible-ai toggle"></button></div>
             <div class="hk"><span class="keys" data-keys="Mod+Ctrl+\"></span><span class="what">Ask <small>show the panel and type a question</small></span><button type="button" class="icon" data-copy="invisible-ai prompt" title="Copy command: invisible-ai prompt"></button></div>
             <div class="hk"><span class="keys" data-keys="Mod+Alt+\"></span><span class="what">Voice <small>start / stop live transcription</small></span><button type="button" class="icon" data-copy="invisible-ai listen" title="Copy command: invisible-ai listen"></button></div>
+            <div class="hk"><span class="keys" data-keys="Mod+Alt+Shift+\"></span><span class="what">Spoken answers <small>on / off; the speaker button stops a long one</small></span><button type="button" class="icon" data-copy="invisible-ai speak" title="Copy command: invisible-ai speak"></button></div>
             <div class="hk"><span class="keys" data-keys="Mod+PageUp"></span><span class="what">Scroll answers <small>Mod+PageDown scrolls down; no mouse needed</small></span><button type="button" class="icon" data-copy="invisible-ai scroll up" title="Copy command: invisible-ai scroll up"></button></div>
             <div class="hk"><span class="keys" data-keys="Mod+Shift+\"></span><span class="what">Interact <small>click and type in the panel</small></span><button type="button" class="icon" data-copy="invisible-ai interact" title="Copy command: invisible-ai interact"></button></div>
             <div class="hk"><span class="keys" data-keys="Mod+Ctrl+BackSpace"></span><span class="what">Clear everything <small>chat, follow-up context, transcript</small></span><button type="button" class="icon" data-copy="invisible-ai clear" title="Copy command: invisible-ai clear"></button></div>
@@ -528,6 +537,26 @@
       }
       for (const button of document.querySelectorAll("[data-copy]")) button.innerHTML = ICONS.copy;
 
+      // Spoken answers (Piper, local): the speaker toggles them; while an answer is being
+      // spoken, a click stops it instead. The choice is remembered.
+      const speakButton = document.getElementById("speak");
+      function showSpeech(on) {
+        speakButton.classList.toggle("on", on);
+        speakButton.title = on ? "Spoken answers: on (click to turn off)" : "Spoken answers: off (click to turn on)";
+        store("speak", on);
+      }
+      speakButton.addEventListener("click", () => {
+        if (speakButton.classList.contains("speaking")) run("hush");
+        else run("speak");
+      });
+      listen("speech", ({ payload }) => showSpeech(payload));
+      listen("speaking", ({ payload }) => {
+        speakButton.classList.toggle("speaking", payload);
+        if (payload) speakButton.title = "Speaking (click to stop)";
+        else showSpeech(speakButton.classList.contains("on"));
+      });
+      if (load("speak", false)) run("speak on");
+
       // Voice language: the button shows the current one and switches to the next.
       const langButton = document.getElementById("lang");
       function showLanguage(code) {
@@ -703,6 +732,8 @@
           answer.className = "a pending";
           startThinking();
           setStreaming(true);
+        } else if (kind === "speech-error") {
+          body?.append(el("div", "note", `Not spoken: ${text}`));
         } else if (kind === "reasoning") {
           addReasoning(text);
         } else if (kind === "delta") {

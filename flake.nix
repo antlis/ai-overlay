@@ -54,6 +54,7 @@
             cmake # whisper.cpp build
             # Programs the app runs (also recorded for hotkey starts, see app/build.rs).
             whisper-cpp # whisper-server: voice
+            piper-tts # piper: spoken answers
             grim # screenshots on Wayland
             wl-clipboard # copy on Wayland
             xclip # copy on X11

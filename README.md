@@ -40,6 +40,15 @@ command, sends it there:
 | `invisible-ai listen` | Start / stop the live transcript (mic = "Me", system audio = "Them") |
 | `invisible-ai ask [question]` | Screenshot + question → streamed answer in the overlay (default question: help with what's on screen) |
 | `invisible-ai models <provider>` | List the model ids a provider advertises (`refresh-models` refetches instead of reading the 24 h cache) |
+| `invisible-ai prompt` | Show the panel, switch to interactive and focus the question input (an "Ask" hotkey) |
+| `invisible-ai stop` | Stop the answer that is streaming (and speaking) |
+| `invisible-ai copy` | Copy the last answer to the clipboard |
+| `invisible-ai clear` | Clear everything: history, follow-up context, transcript |
+| `invisible-ai scroll up\|down\|top\|bottom` | Scroll the answers a page at a time |
+| `invisible-ai language [code]` | Voice language: next of `[voice] language`, or the given one |
+| `invisible-ai speak [on\|off]` | Toggle spoken answers (local Piper voices) |
+| `invisible-ai hush` | Stop speaking the current answer |
+| `invisible-ai --help` | List the commands (doesn't start the app) |
 | `invisible-ai quit` | Exit |
 
 The same actions are in the **tray icon** menu and the panel header (Ask / fullscreen / hide),
@@ -94,9 +103,33 @@ Mic lines that repeat what the speakers just said are dropped as echo (compared 
 `whisper-server` crashes it's restarted; its log is `~/.cache/invisible-ai/whisper-server.log`
 and the clip it died on is kept as `~/.cache/invisible-ai/crash-*.wav`.
 
-Settings are under `[voice]` in the config; keep `language` fixed (e.g. `"en"`): `auto` often misdetects short clips with `base`. On an i7-8650U, `base` transcribes ~3x faster than
-real time; `small` is slower than real time. Use headphones: on speakers the mic also hears the
-other side, so their words show up as "Me" too.
+Settings are under `[voice]` in the config. `language = "en,ru"` lists the languages the **EN/RU**
+button (or `invisible-ai language [code]`) switches between; the first is the default. Each clip
+is transcribed in the selected language: Whisper's own detection misreads short clips, especially
+Russian with `base`. On an i7-8650U, `base` transcribes ~3x faster than real time; `small` is
+slower than real time. Use headphones: on speakers the mic also hears the other side, so their
+words show up as "Me" too.
+
+### Spoken answers
+
+The speaker button in the header (or `invisible-ai speak [on|off]`) reads answers aloud with
+[Piper](https://github.com/OHF-Voice/piper1-gpl), locally: sentence by sentence while the answer
+streams, Markdown stripped, code blocks replaced by "The code is on screen". A Cyrillic answer
+uses the Russian voice. While it speaks, a click on the speaker (or `invisible-ai hush`, or
+Stop) silences it, and the live transcript skips what was recorded meanwhile, so the app never
+transcribes, or answers, its own voice. Download the voices once:
+
+```sh
+mkdir -p ~/.local/share/invisible-ai/voices && cd ~/.local/share/invisible-ai/voices
+base=https://huggingface.co/rhasspy/piper-voices/resolve/main
+for v in en/en_US/lessac/medium/en_US-lessac-medium ru/ru_RU/irina/medium/ru_RU-irina-medium; do
+  curl -LO "$base/$v.onnx" -LO "$base/$v.onnx.json"
+done
+```
+
+Other voices: [piper-voices](https://huggingface.co/rhasspy/piper-voices); set them under
+`[speech]` (see `config.example.toml`). On speakers, people in a call hear the answer through
+your mic; use headphones.
 
 ## AI provider
 

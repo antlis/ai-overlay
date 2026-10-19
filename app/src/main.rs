@@ -4,6 +4,7 @@ mod ipc;
 mod overlay;
 mod settings;
 mod tray;
+mod tts;
 mod voice;
 
 use std::process::ExitCode;
@@ -26,7 +27,9 @@ Commands:
   prompt             show the panel and focus the question input
   ask [question]     ask about the screen now (no question: the default one)
   scroll <dir>       scroll the answers: up, down (a page), top, bottom
-  stop               stop the answer that is streaming
+  stop               stop the answer that is streaming (and speaking)
+  speak [on|off]     toggle spoken answers (local Piper voices)
+  hush               stop speaking the current answer
   copy               copy the last answer to the clipboard
   clear              clear everything: history, follow-up context, transcript
   listen             start / stop live transcription (voice)
@@ -249,6 +252,7 @@ pub fn dispatch(app: &AppHandle, cmd: &str) -> Result<String, String> {
         }
         "stop" => {
             LATEST.fetch_add(1, Ordering::SeqCst);
+            tts::stop(app);
             app.emit("answer", json!({ "kind": "stopped", "text": "" }))
                 .map_err(|e| e.to_string())?;
         }
@@ -269,6 +273,16 @@ pub fn dispatch(app: &AppHandle, cmd: &str) -> Result<String, String> {
             }
             app.emit("scroll", direction).map_err(|e| e.to_string())?;
         }
+        "speak" => {
+            let on = match rest.trim() {
+                "" => None,
+                "on" => Some(true),
+                "off" => Some(false),
+                _ => return Err("usage: speak [on|off]".into()),
+            };
+            return Ok(if tts::set_enabled(app, on) { "on" } else { "off" }.to_owned());
+        }
+        "hush" => tts::stop(app),
         "language" => {
             // Options come from the config, so switching works before listening starts.
             if let Ok(config) = ai::load_config() {
@@ -321,6 +335,24 @@ fn ask(app: &AppHandle, config: &ai::Config, question: &str) {
     };
     let earlier = CONTEXT.lock().unwrap().clone();
     let mut answer = String::new();
+    // Spoken answers: sentences go to Piper as they complete. A new answer interrupts.
+    let speaking = tts::enabled();
+    if speaking {
+        tts::stop(app);
+    }
+    let mut sentences = tts::Sentences::default();
+    let say = |sentences: Vec<String>, lang: &'static str| {
+        for sentence in sentences {
+            if !current() {
+                return;
+            }
+            if let Err(e) = tts::say(app, &config.speech, lang, &sentence) {
+                eprintln!("speech: {e}");
+                emit("speech-error", &e);
+                return;
+            }
+        }
+    };
     let transcript = voice::recent();
     let prompt = if transcript.is_empty() {
         question.to_owned()
@@ -343,12 +375,20 @@ fn ask(app: &AppHandle, config: &ai::Config, question: &str) {
             } else {
                 answer.push_str(delta);
                 emit("delta", delta);
+                if speaking {
+                    let done = sentences.push(delta);
+                    say(done, sentences.lang());
+                }
             }
             current()
         })
     })();
     match result {
         Ok(()) if current() => {
+            if speaking {
+                let rest = sentences.finish();
+                say(rest, sentences.lang());
+            }
             let mut context = CONTEXT.lock().unwrap();
             context.push((question.to_owned(), answer));
             let excess = context.len().saturating_sub(CONTEXT_LEN);
