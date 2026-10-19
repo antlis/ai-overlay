@@ -156,9 +156,11 @@
           <legend>Hotkeys (from your WM config)</legend>
           <div class="hk"><code>Mod+\</code><span>show / hide (starts the app if it isn't running)</span><button type="button" class="icon" data-copy="invisible-ai toggle" title="Copy command">⧉</button></div>
           <div class="hk"><code>Mod+Shift+\</code><span>interact (click and type in the panel)</span><button type="button" class="icon" data-copy="invisible-ai interact" title="Copy command">⧉</button></div>
+          <div class="hk"><code>Mod+Ctrl+\</code><span>ask: show the panel and type a question</span><button type="button" class="icon" data-copy="invisible-ai prompt" title="Copy command">⧉</button></div>
+          <div class="hk"><code>Mod+Alt+\</code><span>voice: start / stop live transcription</span><button type="button" class="icon" data-copy="invisible-ai listen" title="Copy command">⧉</button></div>
           <div class="hk"><code>Mod+/</code><span>keybinding cheatsheet (rofi)</span></div>
           <div class="hk"><code>Mod+Shift+/</code><span>all keybindings</span></div>
-          <p class="hk-note">Bindings live in the WM config — <code>~/.config/niri/config.kdl</code> (Niri) or <code>~/.config/i3/config</code> (i3). ⧉ copies the command to paste into a new binding. Any <code>invisible-ai &lt;command&gt;</code> works from a shell.</p>
+          <p class="hk-note">Bindings live in the WM config — <code>~/.config/niri/config.kdl</code> (Niri) or <code>~/.config/i3/config</code> (i3). ⧉ copies the command to paste into a new binding. Any <code>invisible-ai &lt;command&gt;</code> works from a shell; <code>invisible-ai --help</code> lists them.</p>
         </fieldset>
       </form>
       <form id="ask-form">
@@ -390,6 +392,12 @@
         }
       }
       raw = "";
+
+      // Ask hotkey (invisible-ai prompt): straight to the question input.
+      listen("prompt", () => {
+        closeSettings(false);
+        askInput.focus();
+      });
 
       listen("interactive", ({ payload }) => {
         document.body.classList.toggle("interactive", payload);

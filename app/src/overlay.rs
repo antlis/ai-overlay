@@ -252,6 +252,25 @@ pub fn toggle_interactive(window: &WebviewWindow) -> tauri::Result<()> {
     apply_mode(window, interactive)
 }
 
+/// Interactive mode with keyboard focus on the panel (the UI then focuses its question
+/// input). On Wayland the panel takes the keyboard until interactive mode ends: an
+/// overlay layer only gets focus on demand otherwise, i.e. after a click.
+pub fn focus_prompt(window: &WebviewWindow) -> tauri::Result<()> {
+    INTERACTIVE.store(true, Ordering::SeqCst);
+    apply_mode(window, true)?;
+    #[cfg(target_os = "linux")]
+    if WAYLAND.load(Ordering::SeqCst) {
+        let w = window.clone();
+        window.run_on_main_thread(move || {
+            use gtk_layer_shell::{KeyboardMode, LayerShell};
+            if let Some(layer) = toplevel(&w) {
+                layer.set_keyboard_mode(KeyboardMode::Exclusive);
+            }
+        })?;
+    }
+    window.emit("prompt", ())
+}
+
 pub fn is_fullscreen() -> bool {
     FULLSCREEN.load(Ordering::SeqCst)
 }

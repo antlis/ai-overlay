@@ -52,6 +52,11 @@
             cargo-tauri
             rustPlatform.bindgenHook # libclang + libc headers for bindgen (pipewire, via xcap)
             cmake # whisper.cpp build
+            # Programs the app runs (also recorded for hotkey starts, see app/build.rs).
+            whisper-cpp # whisper-server: voice
+            grim # screenshots on Wayland
+            wl-clipboard # copy on Wayland
+            xclip # copy on X11
           ];
 
           buildInputs = tauriLibs ++ backendLibs;

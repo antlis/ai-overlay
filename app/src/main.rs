@@ -13,8 +13,29 @@ use std::sync::Mutex;
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, RunEvent};
 
-const COMMANDS: &str =
-    "toggle, interact, fullscreen, move <dx> <dy>, resize <dw> <dh>, capture, ask [question], stop, copy, clear, listen, quit";
+const HELP: &str = "\
+invisible-ai: AI overlay that answers questions about your screen.
+
+Usage:
+  invisible-ai             run the app (one instance at a time)
+  invisible-ai <command>   control the running app; starts it first if needed
+
+Commands:
+  toggle             show / hide the panel
+  interact           toggle interactive mode (click and type in the panel)
+  prompt             show the panel and focus the question input
+  ask [question]     ask about the screen now (no question: the default one)
+  stop               stop the answer that is streaming
+  copy               copy the last answer to the clipboard
+  clear              clear the history and follow-up context
+  listen             start / stop live transcription (voice)
+  fullscreen         toggle fullscreen / compact panel
+  move <dx> <dy>     move the compact panel (logical px)
+  resize <dw> <dh>   resize the compact panel (logical px)
+  capture            save a screenshot (without the panel), print its path
+  quit               quit the app
+
+Config: ~/.config/invisible-ai/config.toml";
 pub const DEFAULT_QUESTION: &str = "What's on my screen? Help me with what I'm working on.";
 
 /// Start the app in the background and wait until it listens on the control socket.
@@ -51,6 +72,10 @@ fn start() -> std::io::Result<()> {
 fn main() -> ExitCode {
     // `invisible-ai <command>` controls the running instance.
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if matches!(args.first().map(String::as_str), Some("-h" | "--help" | "help")) {
+        println!("{HELP}");
+        return ExitCode::SUCCESS;
+    }
     if !args.is_empty() {
         let cmd = args.join(" ");
         let sent = ipc::send(&cmd).or_else(|_| {
@@ -172,6 +197,12 @@ pub fn dispatch(app: &AppHandle, cmd: &str) -> Result<String, String> {
     match verb {
         "toggle" => overlay::toggle_visible(&overlay).map_err(|e| e.to_string())?,
         "interact" => overlay::toggle_interactive(&overlay).map_err(|e| e.to_string())?,
+        "prompt" => {
+            if !overlay::is_visible(&overlay).map_err(|e| e.to_string())? {
+                overlay::set_visible(&overlay, true).map_err(|e| e.to_string())?;
+            }
+            overlay::focus_prompt(&overlay).map_err(|e| e.to_string())?;
+        }
         "fullscreen" => overlay::toggle_fullscreen(&overlay).map_err(|e| e.to_string())?,
         "move" => {
             let mut delta = rest.split_whitespace().map(str::parse::<i32>);
@@ -241,7 +272,7 @@ pub fn dispatch(app: &AppHandle, cmd: &str) -> Result<String, String> {
             return Ok(models.join("\n"));
         }
         "quit" => app.exit(0),
-        _ => return Err(format!("unknown command '{cmd}' (expected {COMMANDS})")),
+        _ => return Err(format!("unknown command '{cmd}' (see invisible-ai --help)")),
     }
     Ok(String::new())
 }
