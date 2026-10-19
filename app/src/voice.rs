@@ -71,7 +71,12 @@ pub fn is_question(text: &str) -> bool {
     const REQUESTS: &[&str] = &[
         "explain", "tell", "describe", "write", "show", "give", "compare", "define", "help",
         "list", "summarize", "summarise",
-        "объясни", "расскажи", "покажи", "напиши", "опиши", "сравни", "помоги", "перечисли", "дай",
+    ];
+    // Russian request verbs by stem: Whisper often garbles the ending or fuses the next
+    // word ("Объясни мне" → "Объяснимли").
+    const STEMS: &[&str] = &[
+        "объясн", "расскаж", "подскаж", "скаж", "покаж", "напиш", "опиш", "сравн", "помог",
+        "перечисл", "дай", "найд", "переведи", "исправ",
     ];
     let text = text.trim();
     // Leading letters of the first word, so "What's" counts as "what".
@@ -81,7 +86,9 @@ pub fn is_question(text: &str) -> bool {
         .take_while(|c| c.is_alphanumeric())
         .collect::<String>()
         .to_lowercase();
-    text.ends_with('?') || REQUESTS.contains(&first.as_str())
+    text.ends_with('?')
+        || REQUESTS.contains(&first.as_str())
+        || STEMS.iter().any(|stem| first.starts_with(stem))
 }
 
 /// How many transcript lines `recent()` keeps as context for questions.
@@ -275,6 +282,8 @@ fn start(
     // A previous session's worker may still be finishing; this session takes over.
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     stop_server();
+    // Loading the model takes a few seconds; the panel shows that it's starting.
+    let _ = app.emit("voice", "starting");
     *SERVER.lock().map_err(|e| e.to_string())? = Some(server.spawn(true)?);
 
     let (tx, rx) = mpsc::channel::<Segment>();
@@ -340,6 +349,7 @@ fn start(
                 }
             };
             let Some((speaker, samples, _)) = queue.remove(next) else { continue };
+            let _ = app.emit("voice", "transcribing");
             let mut result = transcribe(&url, &samples, &language());
             if result.is_err() {
                 match server.restart_if_dead(&samples) {
@@ -348,6 +358,7 @@ fn start(
                     Err(e) => result = Err(format!("restarting whisper-server: {e}")),
                 }
             }
+            let _ = app.emit("voice", "idle");
             heard.retain(|(at, _)| at.elapsed() < ECHO_WINDOW);
             match result {
                 Ok(text) if speaker == "me" && is_echo(&text, heard.iter().map(|(_, t)| t.as_str())) => {
@@ -562,5 +573,8 @@ mod tests {
         assert!(is_question("Объясни мне асинхронные функции"));
         assert!(is_question("Как работает event loop?"));
         assert!(!is_question("Я думаю, это хорошая идея."));
+        assert!(is_question("Объяснимли как работают замыкания в JavaScript."));
+        assert!(is_question("Расскажите про event loop."));
+        assert!(is_question("Подскажи, как отменить коммит."));
     }
 }

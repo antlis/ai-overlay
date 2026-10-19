@@ -25,6 +25,7 @@ Commands:
   interact           toggle interactive mode (click and type in the panel)
   prompt             show the panel and focus the question input
   ask [question]     ask about the screen now (no question: the default one)
+  scroll <dir>       scroll the answers: up, down (a page), top, bottom
   stop               stop the answer that is streaming
   copy               copy the last answer to the clipboard
   clear              clear everything: history, follow-up context, transcript
@@ -260,6 +261,13 @@ pub fn dispatch(app: &AppHandle, cmd: &str) -> Result<String, String> {
             CONTEXT.lock().unwrap().clear();
             voice::clear_recent();
             app.emit("cleared", ()).map_err(|e| e.to_string())?;
+        }
+        "scroll" => {
+            let direction = rest.trim();
+            if !matches!(direction, "up" | "down" | "top" | "bottom") {
+                return Err("usage: scroll up|down|top|bottom".into());
+            }
+            app.emit("scroll", direction).map_err(|e| e.to_string())?;
         }
         "language" => {
             // Options come from the config, so switching works before listening starts.

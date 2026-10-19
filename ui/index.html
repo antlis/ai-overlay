@@ -64,6 +64,32 @@
       #ask.stop { background: rgba(255, 107, 107, 0.85); }
       #listen.on { background: rgba(255, 107, 107, 0.3); color: #ffb3b3; box-shadow: 0 0 0 1px rgba(255, 107, 107, 0.6); }
 
+      /* Voice status: starting (spinner), listening (pulsing dot + level bars), transcribing (dots). */
+      #voice-status {
+        display: flex; align-items: center; gap: 10px; margin: 10px var(--gutter) 0 0; padding: 8px 14px;
+        border-radius: 12px; background: rgba(255, 107, 107, 0.1); border: 1px solid rgba(255, 107, 107, 0.3);
+        font-size: 0.85em; color: #ffd0d0;
+      }
+      #voice-status[hidden] { display: none; }
+      #voice-status .vs-lang { margin-left: auto; font: 600 11px ui-monospace, monospace; opacity: 0.7; }
+      .vs-icon { display: inline-flex; align-items: center; gap: 3px; height: 16px; }
+      .starting .vs-icon::before {
+        content: ""; width: 14px; height: 14px; border-radius: 50%;
+        border: 2px solid rgba(255, 208, 208, 0.3); border-top-color: #ffd0d0; animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .listening .vs-icon i, .transcribing .vs-icon i { width: 3px; border-radius: 2px; background: #ff6b6b; animation: level 0.9s ease-in-out infinite; }
+      .listening .vs-icon i:nth-child(2) { animation-delay: 0.15s; }
+      .listening .vs-icon i:nth-child(3) { animation-delay: 0.3s; }
+      .listening .vs-icon i:nth-child(4) { animation-delay: 0.45s; }
+      @keyframes level { 0%, 100% { height: 4px; } 50% { height: 16px; } }
+      .transcribing .vs-icon i { width: 6px; height: 6px; border-radius: 50%; animation: bounce 1.2s infinite ease-in-out; }
+      .transcribing .vs-icon i:nth-child(2) { animation-delay: 0.15s; }
+      .transcribing .vs-icon i:nth-child(3) { animation-delay: 0.3s; }
+      .transcribing .vs-icon i:nth-child(4) { display: none; }
+      #listen.on { animation: pulse 1.6s ease-in-out infinite; }
+      @keyframes pulse { 50% { box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.25); } }
+
       /* Live transcript */
       #transcript {
         display: none; max-height: 30%; overflow-y: auto; margin: 8px var(--gutter) 4px 0; padding: 8px 12px;
@@ -254,6 +280,7 @@
           <button data-cmd="toggle" class="icon" title="Hide to tray (Mod+\ or the tray icon brings it back)"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
         </span>
       </header>
+      <div id="voice-status" hidden><span class="vs-icon"></span><span class="vs-text"></span><span class="vs-lang"></span></div>
       <div id="transcript"></div>
       <div id="history"><div id="hint"><div class="avatar">✦</div><h2>Ask anything about your screen</h2><p><kbd>Mod+Ctrl+\</kbd> type a question · <kbd>Mod+Alt+\</kbd> voice</p><p>or click <b>Ask</b></p></div></div>
       <form id="settings">
@@ -290,6 +317,7 @@
             <div class="hk"><span class="keys" data-keys="Mod+\"></span><span class="what">Show / hide <small>starts the app if it isn't running</small></span><button type="button" class="icon" data-copy="invisible-ai toggle" title="Copy command: invisible-ai toggle"></button></div>
             <div class="hk"><span class="keys" data-keys="Mod+Ctrl+\"></span><span class="what">Ask <small>show the panel and type a question</small></span><button type="button" class="icon" data-copy="invisible-ai prompt" title="Copy command: invisible-ai prompt"></button></div>
             <div class="hk"><span class="keys" data-keys="Mod+Alt+\"></span><span class="what">Voice <small>start / stop live transcription</small></span><button type="button" class="icon" data-copy="invisible-ai listen" title="Copy command: invisible-ai listen"></button></div>
+            <div class="hk"><span class="keys" data-keys="Mod+PageUp"></span><span class="what">Scroll answers <small>Mod+PageDown scrolls down; no mouse needed</small></span><button type="button" class="icon" data-copy="invisible-ai scroll up" title="Copy command: invisible-ai scroll up"></button></div>
             <div class="hk"><span class="keys" data-keys="Mod+Shift+\"></span><span class="what">Interact <small>click and type in the panel</small></span><button type="button" class="icon" data-copy="invisible-ai interact" title="Copy command: invisible-ai interact"></button></div>
             <div class="hk"><span class="keys" data-keys="Mod+Ctrl+BackSpace"></span><span class="what">Clear everything <small>chat, follow-up context, transcript</small></span><button type="button" class="icon" data-copy="invisible-ai clear" title="Copy command: invisible-ai clear"></button></div>
             <div class="hk"><span class="keys" data-keys="Mod+/"></span><span class="what">Keybinding cheatsheet <small>rofi; Mod+Shift+/ lists all</small></span></div>
@@ -339,6 +367,15 @@
         if (e.deltaY < 0) follow = false;
         else setTimeout(() => { if (nearBottom()) follow = true; }, 50);
       }, { passive: true });
+
+      // Scroll hotkeys (invisible-ai scroll …): a page at a time, without the mouse.
+      listen("scroll", ({ payload }) => {
+        const view = document.body.classList.contains("settings") ? document.getElementById("settings") : history;
+        const page = view.clientHeight * 0.85;
+        const top = { up: view.scrollTop - page, down: view.scrollTop + page, top: 0, bottom: view.scrollHeight }[payload];
+        view.scrollTo({ top, behavior: "smooth" });
+        if (view === history) follow = payload === "bottom" || (payload === "down" && top + view.clientHeight >= view.scrollHeight - 40);
+      });
 
       // Drag the header to move the panel, the corner to resize it. The backend's
       // move/resize are relative, so the deltas are too: measuring from where the drag
@@ -425,9 +462,27 @@
       });
 
       const transcript = document.getElementById("transcript");
+      // Voice status bar: shown while voice is on.
+      const voiceStatus = document.getElementById("voice-status");
+      const VOICE_TEXT = { starting: "Starting voice…", listening: "Listening", transcribing: "Transcribing…" };
+      voiceStatus.querySelector(".vs-icon").innerHTML = "<i></i><i></i><i></i><i></i>";
+      function setVoice(state) {
+        voiceStatus.hidden = state === "off";
+        voiceStatus.className = state;
+        voiceStatus.querySelector(".vs-text").textContent = VOICE_TEXT[state] ?? "";
+        voiceStatus.querySelector(".vs-lang").textContent = document.getElementById("lang").textContent;
+      }
+      // After stopping, the last clip is still transcribed: show that, then hide.
+      let voiceOn = false;
+      listen("voice", ({ payload }) => {
+        if (payload === "idle") setVoice(voiceOn ? "listening" : "off");
+        else setVoice(payload);
+      });
       listen("listening", ({ payload }) => {
+        voiceOn = payload;
         document.getElementById("listen").classList.toggle("on", payload);
         document.getElementById("listen").title = payload ? "Stop listening" : "Listen (live transcript)";
+        setVoice(payload ? "listening" : "off");
       });
       listen("transcript", ({ payload: { speaker, text } }) => {
         const line = document.createElement("div");
@@ -477,6 +532,7 @@
       const langButton = document.getElementById("lang");
       function showLanguage(code) {
         langButton.textContent = code.toUpperCase();
+        voiceStatus.querySelector(".vs-lang").textContent = code.toUpperCase();
         langButton.title = `Voice language: ${code} (click to switch)`;
       }
       langButton.addEventListener("click", () => run("language"));
