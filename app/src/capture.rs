@@ -14,23 +14,45 @@ fn screen(overlay: &WebviewWindow) -> Result<RgbaImage, String> {
 
 /// Capture without the overlay in the shot, so the model never sees its own answers.
 /// The compact panel stays on screen and is blanked out of the image. A fullscreen
-/// panel would blank out everything, and hiding it flickers, so there's no
-/// screenshot then (`None`).
-pub fn screen_without_overlay(overlay: &WebviewWindow) -> Result<Option<RgbaImage>, String> {
+/// panel would blank out everything, so on X11 it fades out for the capture instead.
+pub fn screen_without_overlay(overlay: &WebviewWindow) -> Result<RgbaImage, String> {
     // Wayland: the compositor leaves the overlay out of captures (Niri's
     // block-out-from rule), so nothing to blank out, fullscreen or not.
     if crate::overlay::is_wayland() {
-        return wayland_screen().map(Some);
+        return wayland_screen();
     }
     let visible = crate::overlay::is_visible(overlay).map_err(|e| e.to_string())?;
     if visible && crate::overlay::is_fullscreen() {
-        return Ok(None);
+        set_transparent(overlay, true)?;
+        // Give the compositor a frame or two to repaint without the overlay.
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        let image = screen(overlay);
+        set_transparent(overlay, false)?;
+        return image;
     }
     let mut image = screen(overlay)?;
     if visible {
         blank_out(&mut image, overlay)?;
     }
-    Ok(Some(image))
+    Ok(image)
+}
+
+/// Fade the overlay out via window opacity (needs a compositor, e.g. picom) rather
+/// than hiding it, so i3 doesn't unmanage and re-place the window around every capture.
+fn set_transparent(overlay: &WebviewWindow, transparent: bool) -> Result<(), String> {
+    let w = overlay.clone();
+    let (done, wait) = std::sync::mpsc::channel();
+    overlay
+        .run_on_main_thread(move || {
+            use gtk::prelude::WidgetExt;
+            if let Ok(gtk_window) = w.gtk_window() {
+                gtk_window.set_opacity(if transparent { 0.0 } else { 1.0 });
+            }
+            let _ = done.send(());
+        })
+        .map_err(|e| e.to_string())?;
+    // Callers rely on the change having been applied (capture timing, repaint after restore).
+    wait.recv().map_err(|e| e.to_string())
 }
 
 /// Capture via the wlr-screencopy protocol (`grim`), which Niri supports.

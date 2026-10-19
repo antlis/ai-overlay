@@ -283,11 +283,13 @@
         transcript.scrollTop = transcript.scrollHeight;
       });
 
-      listen("fullscreen", ({ payload }) => {
-        document.body.classList.toggle("fullscreen", payload);
-        document.getElementById("fullscreen").textContent = payload ? "⤡" : "⤢";
-        document.getElementById("fullscreen").title = payload ? "Exit fullscreen" : "Fullscreen";
-      });
+      function showFullscreen(on) {
+        document.body.classList.toggle("fullscreen", on);
+        document.getElementById("fullscreen").textContent = on ? "⤡" : "⤢";
+        document.getElementById("fullscreen").title = on ? "Exit fullscreen" : "Fullscreen";
+      }
+      listen("fullscreen", ({ payload }) => showFullscreen(payload));
+      invoke("is_fullscreen").then(showFullscreen);
 
       // Copy via the app (wl-copy / xclip): works in click-through mode, without focus.
       function copyButton(getText, title) {

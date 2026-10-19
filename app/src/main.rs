@@ -96,7 +96,7 @@ fn main() -> ExitCode {
     }
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![run, get_settings, save_settings, copy_text, list_models, refresh_models])
+        .invoke_handler(tauri::generate_handler![run, is_fullscreen, get_settings, save_settings, copy_text, list_models, refresh_models])
         .setup(move |app| {
             let overlay = app
                 .get_webview_window("overlay")
@@ -146,6 +146,12 @@ fn refresh_models(provider: String) -> Result<Vec<String>, String> {
     settings::models_for(&provider, true)
 }
 
+/// Lets the page pick up the initial mode (it may load after the first `fullscreen` event).
+#[tauri::command]
+fn is_fullscreen() -> bool {
+    overlay::is_fullscreen()
+}
+
 #[tauri::command]
 fn copy_text(text: String) -> Result<(), String> {
     settings::copy(&text)
@@ -182,9 +188,7 @@ pub fn dispatch(app: &AppHandle, cmd: &str) -> Result<String, String> {
             overlay::resize_by(&overlay, dw, dh).map_err(|e| e.to_string())?
         }
         "capture" => {
-            let image = capture::screen_without_overlay(&overlay)?
-                .ok_or("the panel is fullscreen; exit fullscreen to capture")?;
-            let path = capture::save(&image)?;
+            let path = capture::save(&capture::screen_without_overlay(&overlay)?)?;
             return Ok(path.display().to_string());
         }
         "ask" => {
@@ -265,10 +269,7 @@ fn ask(app: &AppHandle, config: &ai::Config, question: &str) {
         let overlay = app
             .get_webview_window("overlay")
             .ok_or("overlay window missing")?;
-        let png = match capture::screen_without_overlay(&overlay)? {
-            Some(image) => Some(capture::png(&image)?),
-            None => None,
-        };
+        let png = Some(capture::png(&capture::screen_without_overlay(&overlay)?)?);
         // Re-showing a visible window re-maps it on i3, which looks like a restart.
         if !overlay::is_visible(&overlay).map_err(|e| e.to_string())? {
             overlay::set_visible(&overlay, true).map_err(|e| e.to_string())?;

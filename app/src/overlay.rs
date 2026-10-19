@@ -19,7 +19,7 @@ static HIDDEN_AT: std::sync::Mutex<Option<PhysicalPosition<i32>>> = std::sync::M
 /// Interactive: receives clicks and keyboard focus. Otherwise click-through.
 static INTERACTIVE: AtomicBool = AtomicBool::new(false);
 /// Fullscreen: covers the monitor (minus a margin) instead of the compact top-center panel.
-static FULLSCREEN: AtomicBool = AtomicBool::new(false);
+static FULLSCREEN: AtomicBool = AtomicBool::new(true); // opens fullscreen
 /// Running on Wayland: the overlay is our own layer-shell window, not tao's window.
 static WAYLAND: AtomicBool = AtomicBool::new(false);
 /// Wayland only: whether the layer window is shown (readable off the main thread).
