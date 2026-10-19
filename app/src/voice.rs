@@ -39,7 +39,8 @@ fn now_ms() -> u64 {
 pub struct VoiceConfig {
     /// whisper.cpp ggml model; `~` is expanded.
     pub model: String,
-    /// Spoken language: one code ("en"), several to choose from ("en,ru"), or "auto".
+    /// Languages to switch between in the panel ("en,ru"); the first is the default.
+    /// Each clip is transcribed in the selected one.
     pub language: String,
     pub threads: u32,
     /// Local port for whisper-server.
@@ -86,6 +87,60 @@ pub fn is_question(text: &str) -> bool {
 /// How many transcript lines `recent()` keeps as context for questions.
 const RECENT_LINES: usize = 40;
 static RECENT: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
+
+/// Forget the transcript (it's no longer sent as context).
+pub fn clear_recent() {
+    if let Ok(mut recent) = RECENT.lock() {
+        recent.clear();
+    }
+}
+
+/// Languages to switch between (from `voice.language`, e.g. "en,ru") and the current one,
+/// which every clip is transcribed in. Starts with the first; set at runtime.
+static LANGUAGES: Mutex<(Vec<String>, usize)> = Mutex::new((Vec::new(), 0));
+
+/// Take the switchable languages from the config; keeps the current one if still listed.
+pub fn set_options(config: &str) {
+    let options: Vec<String> = config
+        .split(',')
+        .map(|l| l.trim().to_lowercase())
+        .filter(|l| !l.is_empty())
+        .collect();
+    let options = if options.is_empty() { vec!["en".to_owned()] } else { options };
+    let mut state = LANGUAGES.lock().unwrap();
+    let current = state.0.get(state.1).cloned();
+    state.1 = current.and_then(|c| options.iter().position(|o| *o == c)).unwrap_or(0);
+    state.0 = options;
+}
+
+/// (current, options).
+pub fn languages() -> (String, Vec<String>) {
+    let state = LANGUAGES.lock().unwrap();
+    (state.0.get(state.1).cloned().unwrap_or_else(|| "en".into()), state.0.clone())
+}
+
+fn language() -> String {
+    languages().0
+}
+
+/// Switch to `code` (any Whisper language code), or with `None` to the next option.
+pub fn switch_language(code: Option<&str>) -> String {
+    let mut state = LANGUAGES.lock().unwrap();
+    match code.map(str::to_lowercase) {
+        Some(code) => {
+            state.1 = match state.0.iter().position(|o| *o == code) {
+                Some(i) => i,
+                None => {
+                    state.0.push(code);
+                    state.0.len() - 1
+                }
+            }
+        }
+        None if !state.0.is_empty() => state.1 = (state.1 + 1) % state.0.len(),
+        None => {}
+    }
+    state.0.get(state.1).cloned().unwrap_or_else(|| "en".into())
+}
 
 /// The latest transcript lines ("Me: ..." / "Them: ..."), oldest first.
 pub fn recent() -> String {
@@ -244,7 +299,7 @@ fn start(
     // It ends when both recorders are killed and their segmenters return.
     let app = app.clone();
     let url = format!("http://127.0.0.1:{}/inference", config.port);
-    let languages: Vec<String> = config.language.split(',').map(|l| l.trim().to_owned()).collect();
+    set_options(&config.language);
     std::thread::spawn(move || {
         let mut queue: VecDeque<Segment> = VecDeque::new();
         // Recent system-audio lines; on speakers the mic hears them too.
@@ -285,10 +340,10 @@ fn start(
                 }
             };
             let Some((speaker, samples, _)) = queue.remove(next) else { continue };
-            let mut result = transcribe(&url, &samples, &languages);
+            let mut result = transcribe(&url, &samples, &language());
             if result.is_err() {
                 match server.restart_if_dead(&samples) {
-                    Ok(true) => result = transcribe(&url, &samples, &languages),
+                    Ok(true) => result = transcribe(&url, &samples, &language()),
                     Ok(false) => {}
                     Err(e) => result = Err(format!("restarting whisper-server: {e}")),
                 }
@@ -419,36 +474,10 @@ fn is_echo<'a>(mic: &str, heard: impl Iterator<Item = &'a str>) -> bool {
     !mic.is_empty() && mic.iter().filter(|w| heard.contains(*w)).count() * 2 >= mic.len()
 }
 
-/// Whisper reports detected languages by name; config uses ISO codes.
-const LANGUAGE_NAMES: &[(&str, &str)] = &[
-    ("en", "english"), ("ru", "russian"), ("uk", "ukrainian"), ("de", "german"),
-    ("fr", "french"), ("es", "spanish"), ("it", "italian"), ("pl", "polish"),
-];
-
-/// Transcribe a clip. `languages` is one code (forced) or several ("en,ru"): then
-/// Whisper detects the language, and a detection outside the list is redone in the
-/// most plausible listed language (Russian for Cyrillic text, else the first).
-fn transcribe(url: &str, samples: &[i16], languages: &[String]) -> Result<String, String> {
-    let audio = wav(samples);
-    if let [only] = languages {
-        return request(url, &audio, only).map(|(text, _)| text);
-    }
-    let (text, detected) = request(url, &audio, "auto")?;
-    let allowed = |name: &str| {
-        languages.iter().any(|code| {
-            code == name || LANGUAGE_NAMES.iter().any(|&(c, n)| c == code && n == name)
-        })
-    };
-    if text.is_empty() || allowed(&detected) {
-        return Ok(text);
-    }
-    let cyrillic = text.chars().any(|c| ('\u{0400}'..='\u{04FF}').contains(&c));
-    let fallback = match languages.iter().find(|l| *l == "ru") {
-        Some(ru) if cyrillic => ru,
-        _ => &languages[0],
-    };
-    eprintln!("detected {detected}, not in {languages:?}; redoing as {fallback}");
-    request(url, &audio, fallback).map(|(text, _)| text)
+/// Transcribe a clip in `language` (forced: on short clips Whisper's own detection is
+/// unreliable, especially for Russian with small models).
+fn transcribe(url: &str, samples: &[i16], language: &str) -> Result<String, String> {
+    request(url, &wav(samples), language).map(|(text, _)| text)
 }
 
 /// One whisper-server request: (text without non-speech markers, detected language name).

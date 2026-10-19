@@ -89,15 +89,15 @@ impl Provider {
         Ok(key)
     }
 
-    /// Stream an answer (about `screenshot_png`, if given), calling `on_delta` per text
-    /// chunk; it returns false to stop. `earlier` holds previous (question, answer) pairs,
+    /// Stream an answer (about `screenshot_png`, if given), calling `on_delta` per chunk
+    /// of reasoning (`true`, from reasoning models) or answer text; it returns false to stop. `earlier` holds previous (question, answer) pairs,
     /// sent as text so follow-up questions have context.
     pub fn ask(
         &self,
         earlier: &[(String, String)],
         question: &str,
         screenshot_png: Option<&[u8]>,
-        mut on_delta: impl FnMut(&str) -> bool,
+        mut on_delta: impl FnMut(bool, &str) -> bool,
     ) -> Result<(), String> {
         let mut content = vec![json!({ "type": "text", "text": question })];
         if let Some(png) = screenshot_png {
@@ -142,10 +142,15 @@ impl Provider {
             if let Some(err) = event.get("error") {
                 return Err(err.to_string());
             }
-            // Reasoning models also stream `reasoning`/`reasoning_content`; only show the answer.
-            if let Some(text) = event["choices"][0]["delta"]["content"].as_str() {
-                if !on_delta(text) {
-                    break;
+            let delta = &event["choices"][0]["delta"];
+            // Reasoning models stream their thinking as `reasoning` or `reasoning_content`.
+            let reasoning = delta["reasoning"].as_str().or_else(|| delta["reasoning_content"].as_str());
+            let chunks = [(true, reasoning), (false, delta["content"].as_str())];
+            for (is_reasoning, text) in chunks {
+                if let Some(text) = text.filter(|t| !t.is_empty()) {
+                    if !on_delta(is_reasoning, text) {
+                        return Ok(());
+                    }
                 }
             }
         }

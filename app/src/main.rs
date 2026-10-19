@@ -27,8 +27,9 @@ Commands:
   ask [question]     ask about the screen now (no question: the default one)
   stop               stop the answer that is streaming
   copy               copy the last answer to the clipboard
-  clear              clear the history and follow-up context
+  clear              clear everything: history, follow-up context, transcript
   listen             start / stop live transcription (voice)
+  language [code]    voice language: next of [voice] language (en, ru, ...) or <code>
   fullscreen         toggle fullscreen / compact panel
   move <dx> <dy>     move the compact panel (logical px)
   resize <dw> <dh>   resize the compact panel (logical px)
@@ -121,7 +122,7 @@ fn main() -> ExitCode {
     }
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![run, is_fullscreen, get_settings, save_settings, copy_text, list_models, refresh_models])
+        .invoke_handler(tauri::generate_handler![run, is_fullscreen, voice_language, get_settings, save_settings, copy_text, list_models, refresh_models])
         .setup(move |app| {
             let overlay = app
                 .get_webview_window("overlay")
@@ -169,6 +170,17 @@ fn list_models(provider: String) -> Result<Vec<String>, String> {
 #[tauri::command]
 fn refresh_models(provider: String) -> Result<Vec<String>, String> {
     settings::models_for(&provider, true)
+}
+
+/// Current voice language and the ones to switch between.
+#[tauri::command]
+fn voice_language() -> (String, Vec<String>) {
+    if voice::languages().1.is_empty() {
+        if let Ok(config) = ai::load_config() {
+            voice::set_options(&config.voice.language);
+        }
+    }
+    voice::languages()
 }
 
 /// Lets the page pick up the initial mode (it may load after the first `fullscreen` event).
@@ -246,7 +258,18 @@ pub fn dispatch(app: &AppHandle, cmd: &str) -> Result<String, String> {
         }
         "clear" => {
             CONTEXT.lock().unwrap().clear();
+            voice::clear_recent();
             app.emit("cleared", ()).map_err(|e| e.to_string())?;
+        }
+        "language" => {
+            // Options come from the config, so switching works before listening starts.
+            if let Ok(config) = ai::load_config() {
+                voice::set_options(&config.voice.language);
+            }
+            let code = rest.split_whitespace().next();
+            let current = voice::switch_language(code);
+            app.emit("language", &current).map_err(|e| e.to_string())?;
+            return Ok(current);
         }
         "listen" => {
             let config = ai::load_config()?;
@@ -306,9 +329,13 @@ fn ask(app: &AppHandle, config: &ai::Config, question: &str) {
             overlay::set_visible(&overlay, true).map_err(|e| e.to_string())?;
         }
         emit("start", question);
-        config.active()?.ask(&earlier, &prompt, png.as_deref(), |delta| {
-            answer.push_str(delta);
-            emit("delta", delta);
+        config.active()?.ask(&earlier, &prompt, png.as_deref(), |reasoning, delta| {
+            if reasoning {
+                emit("reasoning", delta);
+            } else {
+                answer.push_str(delta);
+                emit("delta", delta);
+            }
             current()
         })
     })();

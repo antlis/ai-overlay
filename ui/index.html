@@ -8,106 +8,229 @@
     <script src="vendor/purify.min.js"></script>
     <script src="vendor/highlight.min.js"></script>
     <style>
-      :root { --font: 16px; --alpha: 0.78; }
+      :root {
+        --font: 16px; --alpha: 0.78;
+        --text: #ececf1; --muted: rgba(236, 236, 241, 0.6);
+        --surface: rgba(255, 255, 255, 0.06); --surface-hi: rgba(255, 255, 255, 0.12);
+        --line: rgba(255, 255, 255, 0.1);
+        --accent: #8b6cff; --accent-soft: rgba(139, 108, 255, 0.22);
+        --danger: #ff6b6b;
+        --gutter: 44px; /* right strip: clickable in click-through mode (copy, scroll) */
+      }
       html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
-      body { font-family: system-ui, sans-serif; color: #eee; font-size: var(--font); }
+      body {
+        font-family: "Inter", system-ui, sans-serif; color: var(--text); font-size: var(--font);
+        -webkit-font-smoothing: antialiased;
+      }
       .panel {
-        position: relative;
-        box-sizing: border-box;
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        padding: 14px 18px;
-        border-radius: 14px;
-        background: rgba(20, 20, 24, var(--alpha));
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        transition: border-color 120ms;
+        position: relative; box-sizing: border-box; height: 100%;
+        display: flex; flex-direction: column; padding: 10px 14px 12px 18px;
+        border-radius: 16px; background: rgba(17, 17, 21, var(--alpha));
+        border: 1px solid var(--line); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+        transition: border-color 150ms;
       }
-      body.interactive .panel { border-color: rgba(124, 92, 255, 0.9); }
-      header { display: flex; justify-content: space-between; font-size: 14px; opacity: 0.85; margin-bottom: 10px; }
-      header { align-items: center; cursor: grab; }
-      header h1 { margin: 0; font-size: 14px; font-weight: 600; }
-      .controls { display: flex; align-items: center; gap: 8px; }
+      body.interactive .panel { border-color: rgba(139, 108, 255, 0.85); }
+      svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+      /* Header */
+      header {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding-bottom: 10px; margin-bottom: 4px; border-bottom: 1px solid var(--line); cursor: grab;
+      }
+      header h1 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; letter-spacing: 0.01em; }
+      .logo {
+        width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; font-size: 13px;
+        background: linear-gradient(135deg, #8b6cff, #4fc3f7); color: #fff;
+      }
+      .controls { display: flex; align-items: center; gap: 6px; }
+      #mode {
+        display: inline-flex; align-items: center; gap: 6px; margin-right: 4px; padding: 4px 10px;
+        border-radius: 999px; background: var(--surface); font-size: 12px; color: var(--muted);
+      }
+      #mode::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+      body.interactive #mode { color: #cbbfff; background: var(--accent-soft); }
+      body.interactive #mode::before { background: var(--accent); }
       button {
-        font: inherit; color: inherit; cursor: pointer;
-        background: rgba(255, 255, 255, 0.08); border: 0; border-radius: 7px;
-        min-width: 30px; height: 28px; padding: 0 10px;
+        font: inherit; font-size: 14px; color: inherit; cursor: pointer;
+        display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+        background: var(--surface); border: 1px solid transparent; border-radius: 10px;
+        min-width: 36px; height: 36px; padding: 0 14px; transition: background 120ms, transform 80ms;
       }
-      /* Icon-only buttons: larger glyphs. */
-      .controls button.icon { font-size: 16px; padding: 0 8px; }
-      button:hover { background: rgba(255, 255, 255, 0.18); }
-      #ask.stop { background: rgba(255, 80, 80, 0.45); }
-      #history { flex: 1; min-height: 0; overflow-y: auto; overflow-wrap: anywhere; line-height: 1.45; }
-      #history::-webkit-scrollbar, #transcript::-webkit-scrollbar { width: 8px; }
-      #history::-webkit-scrollbar-thumb, #transcript::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.25); border-radius: 4px;
-      }
-      /* Copy buttons sit at the right edge, which takes clicks in click-through mode too. */
-      .entry { position: relative; padding-right: 30px; }
-      .entry + .entry { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.28); }
-      .entry .q { font-size: 0.875em; opacity: 0.6; margin: 0 0 6px; }
-      button.copy {
-        position: absolute; right: 0; min-width: 24px; height: 24px; padding: 0;
-        font-size: 13px; opacity: 0.55;
-      }
-      button.copy:hover { opacity: 1; }
-      .entry > button.copy { top: 0; }
-      .entry + .entry > button.copy { top: 14px; }
-      .a pre { position: relative; }
-      .a pre > button.copy { top: 4px; right: -30px; } /* in the gutter, like the answer's */
-      .a > :first-child { margin-top: 0; }
-      .a p, .a ul, .a ol, .a pre { margin: 0 0 8px; }
-      .a ul, .a ol { padding-left: 20px; }
-      .a h1, .a h2, .a h3, .a h4 { font-size: 0.875em; margin: 10px 0 4px; }
-      .a code { font: 0.8em ui-monospace, "DejaVu Sans Mono", monospace; }
-      .a :not(pre) > code { background: rgba(255, 255, 255, 0.1); border-radius: 4px; padding: 1px 4px; }
-      .a pre code.hljs { border-radius: 8px; padding: 8px 10px; background: rgba(0, 0, 0, 0.45); }
-      .a.pending::after { content: "▍"; opacity: 0.6; }
-      .a.error { color: #ff8a8a; }
-      .stopped { font-size: 0.8em; opacity: 0.5; }
-      #listen.on { background: rgba(255, 80, 80, 0.45); }
+      button:hover { background: var(--surface-hi); }
+      button:active { transform: scale(0.96); }
+      button.icon { padding: 0; width: 36px; }
+      #ask { background: var(--accent); color: #fff; font-weight: 600; }
+      #ask:hover { background: #9c82ff; }
+      #ask.stop { background: rgba(255, 107, 107, 0.85); }
+      #listen.on { background: rgba(255, 107, 107, 0.3); color: #ffb3b3; box-shadow: 0 0 0 1px rgba(255, 107, 107, 0.6); }
+
+      /* Live transcript */
       #transcript {
-        display: none; max-height: 35%; overflow-y: auto; margin: 0 0 8px; padding: 6px 8px;
-        border-radius: 8px; background: rgba(0, 0, 0, 0.3); font-size: 0.75em; line-height: 1.4;
+        display: none; max-height: 30%; overflow-y: auto; margin: 8px var(--gutter) 4px 0; padding: 8px 12px;
+        border-radius: 12px; background: rgba(0, 0, 0, 0.3); font-size: 0.8em; line-height: 1.45;
       }
       #transcript:not(:empty) { display: block; }
       #transcript .me b { color: #b4a5ff; }
       #transcript .them b { color: #8fd3c8; }
-      #ask-form { display: none; margin-top: 8px; }
+
+      /* Chat */
+      #history {
+        flex: 1; min-height: 0; overflow-y: auto; overflow-wrap: anywhere; line-height: 1.55;
+        display: flex; flex-direction: column; gap: 18px; padding: 14px 0 6px;
+      }
+      #history::-webkit-scrollbar, #transcript::-webkit-scrollbar, #settings::-webkit-scrollbar { width: 8px; }
+      #history::-webkit-scrollbar-thumb, #transcript::-webkit-scrollbar-thumb, #settings::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.2); border-radius: 4px;
+      }
+      .entry { display: flex; flex-direction: column; gap: 12px; padding-right: var(--gutter); animation: rise 180ms ease-out; }
+      @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+      .msg.user {
+        align-self: flex-end; max-width: 80%; padding: 10px 16px; white-space: pre-wrap;
+        border-radius: 20px 20px 6px 20px; background: var(--accent-soft); border: 1px solid rgba(139, 108, 255, 0.35);
+      }
+      .msg.ai { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; }
+      .avatar {
+        width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 14px;
+        background: linear-gradient(135deg, #8b6cff, #4fc3f7); color: #fff;
+      }
+      .body { min-width: 0; padding-top: 3px; }
+      .a > :first-child { margin-top: 0; }
+      .a > :last-child { margin-bottom: 0; }
+      .a p, .a ul, .a ol, .a pre, .a table, .a blockquote { margin: 0 0 10px; }
+      .a ul, .a ol { padding-left: 22px; }
+      .a li + li { margin-top: 3px; }
+      .a h1, .a h2, .a h3, .a h4 { font-size: 1em; margin: 14px 0 6px; }
+      .a a { color: #b4a5ff; }
+      .a blockquote { border-left: 3px solid var(--line); padding-left: 12px; color: var(--muted); }
+      .a table { border-collapse: collapse; font-size: 0.9em; }
+      .a th, .a td { border: 1px solid var(--line); padding: 4px 10px; }
+      .a code { font: 0.85em ui-monospace, "JetBrains Mono", "DejaVu Sans Mono", monospace; }
+      .a :not(pre) > code { background: rgba(255, 255, 255, 0.1); border-radius: 5px; padding: 1px 5px; }
+      .a pre { position: relative; }
+      .a pre code.hljs { border-radius: 12px; padding: 12px 14px; background: rgba(0, 0, 0, 0.5); border: 1px solid var(--line); }
+      .a.pending > :last-child::after, .a.pending:empty::after {
+        content: ""; display: inline-block; width: 8px; height: 1em; margin-left: 3px; vertical-align: -2px;
+        border-radius: 2px; background: var(--text); animation: blink 1s steps(2) infinite;
+      }
+      @keyframes blink { 50% { opacity: 0; } }
+      .thinking ~ .a.pending:empty::after { display: none; } /* the dots say it already */
+      .error-box {
+        padding: 10px 14px; border-radius: 12px; color: #ffc9c9;
+        background: rgba(255, 107, 107, 0.12); border: 1px solid rgba(255, 107, 107, 0.35);
+      }
+      .note { margin-top: 6px; font-size: 0.8em; color: var(--muted); }
+
+      /* Thinking: dots + timer until the answer starts; reasoning (if the model sends it)
+         in a collapsible block, like "Thought for 5s". */
+      .thinking { display: flex; align-items: center; gap: 10px; height: 30px; color: var(--muted); }
+      .thinking .label {
+        background: linear-gradient(90deg, var(--muted) 30%, #fff 50%, var(--muted) 70%) 0 0 / 300% 100%;
+        -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 1.8s linear infinite;
+      }
+      @keyframes shimmer { to { background-position: -150% 0; } }
+      .dots { display: inline-flex; gap: 4px; }
+      .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: bounce 1.2s infinite ease-in-out; }
+      .dots i:nth-child(2) { animation-delay: 0.15s; }
+      .dots i:nth-child(3) { animation-delay: 0.3s; }
+      @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); opacity: 0.4; } 40% { transform: translateY(-5px); opacity: 1; } }
+      .timer { font-size: 0.8em; font-variant-numeric: tabular-nums; }
+      details.reasoning { margin-bottom: 10px; font-size: 0.85em; color: var(--muted); }
+      details.reasoning summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 0; }
+      details.reasoning summary::before { content: "›"; display: inline-block; transition: transform 120ms; }
+      details.reasoning[open] summary::before { transform: rotate(90deg); }
+      details.reasoning .text {
+        margin-top: 4px; padding: 8px 12px; border-left: 2px solid var(--line);
+        white-space: pre-wrap; max-height: 220px; overflow-y: auto;
+      }
+
+      /* Copy buttons live in the gutter, so they work in click-through mode too. */
+      button.copy {
+        position: absolute; right: calc(-1 * var(--gutter) + 6px); top: 0;
+        width: 32px; min-width: 32px; height: 32px; padding: 0; opacity: 0.6; background: transparent;
+      }
+      button.copy svg { width: 16px; height: 16px; }
+      button.copy:hover { opacity: 1; background: var(--surface-hi); }
+      .a pre > button.copy { top: 6px; }
+
+      /* Empty state */
+      #hint { margin: auto; padding-right: var(--gutter); text-align: center; color: var(--muted); }
+      #hint .avatar { width: 48px; height: 48px; font-size: 22px; margin: 0 auto 12px; }
+      #hint h2 { margin: 0 0 6px; font-size: 1.15em; color: var(--text); font-weight: 600; }
+      #hint p { margin: 4px 0; font-size: 0.85em; }
+      kbd {
+        font: 0.85em ui-monospace, monospace; padding: 1px 6px; border-radius: 5px;
+        background: var(--surface-hi); border: 1px solid var(--line);
+      }
+
+      /* Composer */
+      #ask-form { display: none; margin: 8px var(--gutter) 0 0; }
       body.interactive #ask-form { display: block; }
+      .composer {
+        display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 16px;
+        border-radius: 24px; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--line);
+        transition: border-color 120ms;
+      }
+      .composer:focus-within { border-color: rgba(139, 108, 255, 0.85); }
+      .composer input { flex: 1; border: 0; background: none; padding: 8px 0; }
+      .composer button { width: 36px; padding: 0; border-radius: 50%; background: var(--accent); color: #fff; }
+      .composer-hint { margin: 6px 0 0 16px; font-size: 0.75em; color: var(--muted); }
+
+      /* Forms (settings) */
       input, select {
         box-sizing: border-box; width: 100%; font: inherit; color: inherit;
         background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15);
-        border-radius: 8px; padding: 6px 10px; outline: none;
+        border-radius: 10px; padding: 8px 12px; outline: none;
       }
-      select {
-        color: #eee;
-        background-color: rgba(255, 255, 255, 0.08);
-        color-scheme: dark;
-        appearance: auto;
-      }
+      .composer input { border: 0; background: none; padding: 8px 0; }
+      select { color: #eee; background-color: rgba(255, 255, 255, 0.08); color-scheme: dark; appearance: auto; }
       select option { background: #1c1c22; color: #eee; }
-      input:focus, select:focus { border-color: rgba(124, 92, 255, 0.9); }
-      input[type="range"] { padding: 0; border: 0; background: none; accent-color: #7c5cff; }
-      #settings { display: none; flex: 1; min-height: 0; overflow-y: auto; padding-right: 30px; }
+      input:focus, select:focus { border-color: rgba(139, 108, 255, 0.85); }
+      input[type="range"] { padding: 0; border: 0; background: none; accent-color: var(--accent); }
+      #settings { display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 14px var(--gutter) 0 0; }
       body.settings #settings { display: block; }
       body.settings #history, body.settings #transcript, body.settings #ask-form { display: none; }
-      #settings label { display: block; margin: 0 0 12px; font-size: 0.875em; }
-      #settings label > span { display: block; opacity: 0.7; margin-bottom: 4px; }
+      #settings label { display: block; margin: 0 0 14px; font-size: 0.875em; }
+      #settings label > span { display: block; color: var(--muted); margin-bottom: 6px; }
       #settings .row { display: flex; gap: 8px; align-items: center; }
       #settings label[hidden] { display: none; }
-      #settings .field { margin: 0 0 12px; font-size: 0.875em; }
-      #settings .field-label { display: block; opacity: 0.7; margin-bottom: 4px; }
-      #settings-status { font-size: 0.8em; opacity: 0.7; }
-      #hotkeys { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 8px 10px 6px; margin: 4px 0 12px; font-size: 0.8em; }
-      #hotkeys legend { padding: 0 6px; opacity: 0.7; font-size: 0.95em; }
-      .hk { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
-      .hk code { flex: 0 0 auto; min-width: 92px; opacity: 0.9; }
-      .hk span { flex: 1; opacity: 0.75; }
-      .hk .icon { flex: 0 0 auto; }
-      .hk-note { opacity: 0.6; margin: 8px 0 4px; line-height: 1.5; }
+      #settings .field { margin: 0 0 14px; font-size: 0.875em; }
+      #settings .field-label { display: block; color: var(--muted); margin-bottom: 6px; }
+      #settings-status { font-size: 0.8em; color: var(--muted); }
+      #settings section { padding: 4px 0 18px; }
+      #settings section + section { border-top: 1px solid var(--line); padding-top: 18px; }
+      #settings h3 {
+        margin: 0 0 12px; font-size: 0.75em; font-weight: 600; letter-spacing: 0.08em;
+        text-transform: uppercase; color: var(--muted);
+      }
+      #settings label > span b { color: var(--text); margin-left: 4px; }
+      button.primary { background: var(--accent); color: #fff; font-weight: 600; }
+      button.primary:hover { background: #9c82ff; }
+      button.danger { color: #ffb3b3; background: rgba(255, 107, 107, 0.12); }
+      button.danger:hover { background: rgba(255, 107, 107, 0.25); }
+      .hk-list { display: grid; gap: 6px; }
+      .hk {
+        display: grid; grid-template-columns: 250px minmax(0, 1fr) auto; align-items: center; gap: 14px;
+        padding: 8px 8px 8px 12px; border-radius: 12px; background: var(--surface); border: 1px solid transparent;
+        transition: border-color 120ms, background 120ms;
+      }
+      .hk:hover { background: rgba(255, 255, 255, 0.08); border-color: var(--line); }
+      .keys { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+      .keys kbd {
+        min-width: 14px; padding: 3px 8px; text-align: center; font: 600 0.78em ui-monospace, monospace;
+        border-radius: 7px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.16);
+        border-bottom-width: 3px;
+      }
+      .keys .plus { color: var(--muted); font-size: 0.75em; }
+      .what { font-size: 0.9em; }
+      .what small { display: block; color: var(--muted); font-size: 0.85em; margin-top: 1px; }
+      .hk .icon { width: 32px; height: 32px; min-width: 32px; background: transparent; opacity: 0.7; }
+      .hk .icon:hover { opacity: 1; background: var(--surface-hi); }
+      .hk .icon svg { width: 16px; height: 16px; }
+      .hk-note { color: var(--muted); font-size: 0.8em; margin: 14px 0 4px; line-height: 1.6; }
+      #lang { min-width: 46px; padding: 0 10px; font: 600 12px ui-monospace, monospace; letter-spacing: 0.05em; }
+
       #resize {
-        position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px;
+        position: absolute; right: 3px; bottom: 3px; width: 18px; height: 18px;
         cursor: nwse-resize; opacity: 0.35;
         background: linear-gradient(135deg, transparent 55%, #fff 55%, #fff 62%, transparent 62%,
           transparent 72%, #fff 72%, #fff 79%, transparent 79%);
@@ -119,53 +242,67 @@
   <body>
     <div class="panel">
       <header>
-        <h1>invisible-ai</h1>
+        <h1><span class="logo">✦</span>invisible-ai</h1>
         <span class="controls">
           <span id="mode">Click-through</span>
-          <button id="ask" title="Ask about screen">Ask</button>
-          <button data-cmd="listen" id="listen" class="icon" title="Listen (live transcript)">🎙</button>
-          <button id="settings-btn" class="icon" title="Settings">⚙</button>
-          <button data-cmd="fullscreen" id="fullscreen" class="icon" title="Fullscreen">⤢</button>
-          <button id="minimize" class="icon" title="Hide to tray (keep running)">↘</button>
-          <button data-cmd="toggle" class="icon" title="Hide to tray (Mod+\\ or the tray icon brings it back)">⌄</button>
+          <button id="ask" title="Ask about screen"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg><span>Ask</span></button>
+          <button data-cmd="listen" id="listen" class="icon" title="Listen (live transcript)"><svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg></button>
+          <button id="lang" title="Voice language (click to switch)">EN</button>
+          <button data-cmd="clear" id="clear-all" class="icon" title="Clear everything (history, context, transcript)"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
+          <button id="settings-btn" class="icon" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+          <button data-cmd="fullscreen" id="fullscreen" class="icon" title="Fullscreen"></button>
+          <button data-cmd="toggle" class="icon" title="Hide to tray (Mod+\ or the tray icon brings it back)"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
         </span>
       </header>
       <div id="transcript"></div>
-      <div id="history"><div class="entry" id="hint"><div class="a">Click <b>Ask</b> or run <code>invisible-ai ask [question]</code></div></div></div>
+      <div id="history"><div id="hint"><div class="avatar">✦</div><h2>Ask anything about your screen</h2><p><kbd>Mod+Ctrl+\</kbd> type a question · <kbd>Mod+Alt+\</kbd> voice</p><p>or click <b>Ask</b></p></div></div>
       <form id="settings">
-        <label><span>Provider</span><select id="provider"></select></label>
-        <div class="field"><span class="field-label">Model</span>
-          <div class="row" style="gap: 6px">
-            <select id="model" style="flex: 1; min-width: 0"></select>
-            <button type="button" id="model-refresh" class="icon" title="Reload the model list from the provider">⟳</button>
+        <section>
+          <h3>Model</h3>
+          <label><span>Provider</span><select id="provider"></select></label>
+          <div class="field"><span class="field-label">Model</span>
+            <div class="row" style="gap: 6px">
+              <select id="model" style="flex: 1; min-width: 0"></select>
+              <button type="button" id="model-refresh" class="icon" title="Reload the model list from the provider">⟳</button>
+            </div>
           </div>
-        </div>
-        <label id="model-custom-row" hidden><span>Model (not in the list — type any id)</span><input id="model-custom" autocomplete="off" /></label>
-        <label><span>Default question (asked when you send nothing)</span><input id="default-question" autocomplete="off" /></label>
-        <div class="row" style="margin-bottom: 16px">
-          <button type="submit">Save</button>
-          <span id="settings-status"></span>
-        </div>
-        <label><span>Background opacity: <b id="alpha-value"></b></span><input id="alpha" type="range" min="0.2" max="1" step="0.02" /></label>
-        <label><span>Text size: <b id="font-value"></b></span><input id="font" type="range" min="12" max="24" step="1" /></label>
-        <div class="row">
-          <button type="button" id="clear">Clear history</button>
-          <button type="button" id="settings-close">Done</button>
-        </div>
-        <fieldset id="hotkeys">
-          <legend>Hotkeys (from your WM config)</legend>
-          <div class="hk"><code>Mod+\</code><span>show / hide (starts the app if it isn't running)</span><button type="button" class="icon" data-copy="invisible-ai toggle" title="Copy command">⧉</button></div>
-          <div class="hk"><code>Mod+Shift+\</code><span>interact (click and type in the panel)</span><button type="button" class="icon" data-copy="invisible-ai interact" title="Copy command">⧉</button></div>
-          <div class="hk"><code>Mod+Ctrl+\</code><span>ask: show the panel and type a question</span><button type="button" class="icon" data-copy="invisible-ai prompt" title="Copy command">⧉</button></div>
-          <div class="hk"><code>Mod+Alt+\</code><span>voice: start / stop live transcription</span><button type="button" class="icon" data-copy="invisible-ai listen" title="Copy command">⧉</button></div>
-          <div class="hk"><code>Mod+/</code><span>keybinding cheatsheet (rofi)</span></div>
-          <div class="hk"><code>Mod+Shift+/</code><span>all keybindings</span></div>
-          <p class="hk-note">Bindings live in the WM config — <code>~/.config/niri/config.kdl</code> (Niri) or <code>~/.config/i3/config</code> (i3). ⧉ copies the command to paste into a new binding. Any <code>invisible-ai &lt;command&gt;</code> works from a shell; <code>invisible-ai --help</code> lists them.</p>
-        </fieldset>
+          <label id="model-custom-row" hidden><span>Model (not in the list — type any id)</span><input id="model-custom" autocomplete="off" /></label>
+          <label><span>Default question (asked when you send nothing)</span><input id="default-question" autocomplete="off" /></label>
+          <div class="row">
+            <button type="submit" class="primary">Save</button>
+            <span id="settings-status"></span>
+          </div>
+        </section>
+        <section>
+          <h3>Appearance</h3>
+          <label><span>Background opacity <b id="alpha-value"></b></span><input id="alpha" type="range" min="0.2" max="1" step="0.02" /></label>
+          <label><span>Text size <b id="font-value"></b></span><input id="font" type="range" min="12" max="24" step="1" /></label>
+        </section>
+        <section>
+          <div class="row">
+            <button type="button" id="clear" class="danger">Clear everything</button>
+            <button type="button" id="settings-close">Done</button>
+          </div>
+        </section>
+        <section id="hotkeys">
+          <h3>Hotkeys</h3>
+          <div class="hk-list">
+            <div class="hk"><span class="keys" data-keys="Mod+\"></span><span class="what">Show / hide <small>starts the app if it isn't running</small></span><button type="button" class="icon" data-copy="invisible-ai toggle" title="Copy command: invisible-ai toggle"></button></div>
+            <div class="hk"><span class="keys" data-keys="Mod+Ctrl+\"></span><span class="what">Ask <small>show the panel and type a question</small></span><button type="button" class="icon" data-copy="invisible-ai prompt" title="Copy command: invisible-ai prompt"></button></div>
+            <div class="hk"><span class="keys" data-keys="Mod+Alt+\"></span><span class="what">Voice <small>start / stop live transcription</small></span><button type="button" class="icon" data-copy="invisible-ai listen" title="Copy command: invisible-ai listen"></button></div>
+            <div class="hk"><span class="keys" data-keys="Mod+Shift+\"></span><span class="what">Interact <small>click and type in the panel</small></span><button type="button" class="icon" data-copy="invisible-ai interact" title="Copy command: invisible-ai interact"></button></div>
+            <div class="hk"><span class="keys" data-keys="Mod+Ctrl+BackSpace"></span><span class="what">Clear everything <small>chat, follow-up context, transcript</small></span><button type="button" class="icon" data-copy="invisible-ai clear" title="Copy command: invisible-ai clear"></button></div>
+            <div class="hk"><span class="keys" data-keys="Mod+/"></span><span class="what">Keybinding cheatsheet <small>rofi; Mod+Shift+/ lists all</small></span></div>
+          </div>
+          <p class="hk-note">Bindings live in your WM config (<code>~/.config/niri/config.kdl</code> or <code>~/.config/i3/config</code>). The copy button copies the command for a new binding; <code>invisible-ai --help</code> lists all commands. Voice language: <code>invisible-ai language</code> switches, <code>invisible-ai language ru</code> picks one.</p>
+        </section>
       </form>
       <form id="ask-form">
-        <input id="ask-input" autocomplete="off"
-               placeholder="Ask about your screen… (Enter to send, Esc to cancel)" />
+        <div class="composer">
+          <input id="ask-input" autocomplete="off" placeholder="Ask about your screen…" />
+          <button type="submit" title="Send (Enter)"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+        </div>
+        <div class="composer-hint">Enter to send · empty sends the default question · Esc to cancel</div>
       </form>
       <div id="resize" title="Resize"></div>
     </div>
@@ -177,6 +314,8 @@
       function run(cmd) {
         return invoke("run", { cmd }).catch((e) => showError(String(e)));
       }
+
+      const el = (tag, className, text) => Object.assign(document.createElement(tag), { className, textContent: text ?? "" });
 
       // localStorage can be unavailable; everything works without it, just unsaved.
       function load(key, fallback) {
@@ -238,7 +377,10 @@
       draggable(resizeHandle, "resize");
 
       for (const button of document.querySelectorAll("button[data-cmd]")) {
-        button.addEventListener("click", () => run(button.dataset.cmd));
+        button.addEventListener("click", () => {
+          if (button.id === "listen") closeSettings(); // voice: back to the chat
+          run(button.dataset.cmd);
+        });
       }
 
       // Ask: switch to interactive and type a question; Enter sends it with a
@@ -248,13 +390,24 @@
       const askInput = document.getElementById("ask-input");
       const isInteractive = () => document.body.classList.contains("interactive");
       askButton.addEventListener("click", () => {
+        // From settings: back to the chat, staying interactive so the input can be typed in.
+        if (document.body.classList.contains("settings")) closeSettings(false);
         if (askButton.classList.contains("stop")) run("stop");
         else if (isInteractive()) askInput.focus();
         else run("interact");
       });
+      const ICONS = {
+        up: '<svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
+        stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>',
+        copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>',
+        check: '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>',
+        alert: '<svg viewBox="0 0 24 24"><path d="M12 8v5M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>',
+        expand: '<svg viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>',
+        shrink: '<svg viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>',
+      };
       function setStreaming(on) {
         askButton.classList.toggle("stop", on);
-        askButton.textContent = on ? "Stop" : "Ask";
+        askButton.innerHTML = on ? `${ICONS.stop}<span>Stop</span>` : `${ICONS.up}<span>Ask</span>`;
         askButton.title = on ? "Stop the answer" : "Ask about screen";
       }
       document.getElementById("ask-form").addEventListener("submit", async (e) => {
@@ -287,7 +440,7 @@
 
       function showFullscreen(on) {
         document.body.classList.toggle("fullscreen", on);
-        document.getElementById("fullscreen").textContent = on ? "⤡" : "⤢";
+        document.getElementById("fullscreen").innerHTML = on ? ICONS.shrink : ICONS.expand;
         document.getElementById("fullscreen").title = on ? "Exit fullscreen" : "Fullscreen";
       }
       listen("fullscreen", ({ payload }) => showFullscreen(payload));
@@ -296,48 +449,73 @@
       // Copy via the app (wl-copy / xclip): works in click-through mode, without focus.
       function copyButton(getText, title) {
         const button = Object.assign(document.createElement("button"), {
-          type: "button", className: "copy", textContent: "⧉", title,
+          type: "button", className: "copy", innerHTML: ICONS.copy, title,
         });
         button.addEventListener("click", async () => {
           try {
             await invoke("copy_text", { text: getText() });
-            button.textContent = "✓";
+            button.innerHTML = ICONS.check;
           } catch (e) {
-            button.textContent = "!";
+            button.innerHTML = ICONS.alert;
             button.title = String(e);
           }
-          setTimeout(() => (button.textContent = "⧉"), 1200);
+          setTimeout(() => (button.innerHTML = ICONS.copy), 1200);
         });
         return button;
       }
 
-      // Static ⧉ buttons (settings → hotkeys) copy their data-copy payload.
+      // Hotkey chips: "Mod+Ctrl+X" → [Mod] + [Ctrl] + [X]; copy buttons get the icon.
+      for (const keys of document.querySelectorAll(".keys[data-keys]")) {
+        keys.dataset.keys.split("+").forEach((key, i) => {
+          if (i) keys.append(el("span", "plus", "+"));
+          keys.append(el("kbd", "", key || "+"));
+        });
+      }
+      for (const button of document.querySelectorAll("[data-copy]")) button.innerHTML = ICONS.copy;
+
+      // Voice language: the button shows the current one and switches to the next.
+      const langButton = document.getElementById("lang");
+      function showLanguage(code) {
+        langButton.textContent = code.toUpperCase();
+        langButton.title = `Voice language: ${code} (click to switch)`;
+      }
+      langButton.addEventListener("click", () => run("language"));
+      listen("language", ({ payload }) => showLanguage(payload));
+      invoke("voice_language").then(([current]) => showLanguage(current));
+
+      // Static copy buttons (settings → hotkeys) copy their data-copy payload.
       document.addEventListener("click", async (e) => {
         const el = e.target.closest("[data-copy]");
         if (!el) return;
-        const original = el.textContent;
+        const original = el.innerHTML;
         try {
           await invoke("copy_text", { text: el.dataset.copy });
-          el.textContent = "✓";
+          el.innerHTML = ICONS.check;
         } catch (err) {
-          el.textContent = "!";
+          el.innerHTML = ICONS.alert;
           el.title = String(err);
         }
-        setTimeout(() => (el.textContent = original), 1200);
+        setTimeout(() => (el.innerHTML = original), 1200);
       });
 
-      // Q&A history: each ask adds an entry; the last 20 are kept, also across restarts.
+      // Chat history: each ask adds an entry (question bubble + answer); the last 20 are
+      // kept, also across restarts.
       const MAX_ENTRIES = 20;
       const history = document.getElementById("history");
-      let entries = load("history", []); // [{ q, a, error?, stopped? }]
-      let answer = history.querySelector(".a"), current = null;
+      const hintHTML = document.getElementById("hint").outerHTML;
+      let entries = load("history", []); // [{ q, a, reasoning?, thought?, error?, stopped? }]
+      let answer = null, body = null, current = null;
+
       function newEntry(record) {
         document.getElementById("hint")?.remove();
-        const entry = document.createElement("div");
-        entry.className = "entry";
-        if (record.q) entry.append(Object.assign(document.createElement("p"), { className: "q", textContent: record.q }));
-        answer = Object.assign(document.createElement("div"), { className: "a" });
-        entry.append(answer, copyButton(() => record.a, "Copy answer"));
+        const entry = el("div", "entry");
+        if (record.q) entry.append(el("div", "msg user", record.q));
+        const ai = el("div", "msg ai");
+        body = el("div", "body");
+        answer = el("div", "a");
+        body.append(answer);
+        ai.append(el("div", "avatar", "✦"), body, copyButton(() => record.a, "Copy answer"));
+        entry.append(ai);
         history.append(entry);
         while (history.childElementCount > MAX_ENTRIES) history.firstElementChild.remove();
         follow = true;
@@ -347,13 +525,62 @@
         entries = entries.slice(-MAX_ENTRIES);
         store("history", entries);
       }
+      function showErrorIn(text) {
+        answer.className = "a";
+        answer.replaceChildren(el("div", "error-box", text));
+      }
       function showError(text) {
         const record = { q: "", a: text, error: true };
         entries.push(record);
         saveHistory();
         newEntry(record);
-        answer.textContent = text;
-        answer.className = "a error";
+        showErrorIn(text);
+      }
+
+      // Thinking: from the question until the first answer text, show animated dots and a
+      // timer. Reasoning models also stream their thoughts; those go into a collapsible
+      // "Thinking…" block that becomes "Thought for Ns" once the answer starts.
+      let thinking = null; // { started, tick, indicator, details?, summary?, text? }
+      function startThinking() {
+        const indicator = el("div", "thinking");
+        const dots = el("span", "dots");
+        dots.innerHTML = "<i></i><i></i><i></i>";
+        const timer = el("span", "timer", "0s");
+        indicator.append(dots, el("span", "label", "Thinking"), timer);
+        body.prepend(indicator);
+        const started = Date.now();
+        const tick = setInterval(() => (timer.textContent = `${Math.round((Date.now() - started) / 1000)}s`), 500);
+        thinking = { started, tick, indicator };
+      }
+      function reasoningBlock(text, seconds, open) {
+        const details = el("details", "reasoning");
+        details.open = open;
+        const summary = el("summary", "", seconds == null ? "Thinking…" : `Thought for ${seconds}s`);
+        const box = el("div", "text", text);
+        details.append(summary, box);
+        return { details, summary, box };
+      }
+      function addReasoning(text) {
+        if (!thinking) return;
+        if (!thinking.details) {
+          const block = reasoningBlock("", null, false);
+          Object.assign(thinking, block);
+          thinking.indicator.after(block.details);
+        }
+        thinking.box.textContent += text;
+        current.reasoning = thinking.box.textContent;
+        if (thinking.details.open) thinking.box.scrollTop = thinking.box.scrollHeight;
+      }
+      function stopThinking() {
+        if (!thinking) return;
+        clearInterval(thinking.tick);
+        thinking.indicator.remove();
+        const seconds = Math.max(1, Math.round((Date.now() - thinking.started) / 1000));
+        if (thinking.details) {
+          thinking.summary.textContent = `Thought for ${seconds}s`;
+          if (current) current.thought = seconds;
+        }
+        thinking = null;
       }
 
       // Answers are Markdown from a remote model: sanitize before inserting, since
@@ -374,24 +601,27 @@
         if (follow) history.scrollTop = history.scrollHeight;
       }
       function finish(note) {
+        stopThinking();
         render(true);
         answer.className = "a";
-        if (note) answer.append(Object.assign(document.createElement("div"), { className: "stopped", textContent: note }));
+        if (note) answer.append(el("div", "note", note));
         setStreaming(false);
       }
 
       // Restore saved history.
       for (const record of entries) {
         newEntry(record);
+        if (record.reasoning) body.prepend(reasoningBlock(record.reasoning, record.thought ?? 0, false).details);
         if (record.error) {
-          answer.textContent = record.a;
-          answer.className = "a error";
+          showErrorIn(record.a);
         } else {
           raw = record.a;
-          finish(record.stopped ? "(stopped)" : "");
+          finish(record.stopped ? "Stopped" : "");
         }
       }
       raw = "";
+      setStreaming(false);
+      showFullscreen(true);
 
       // Ask hotkey (invisible-ai prompt): straight to the question input.
       listen("prompt", () => {
@@ -415,8 +645,12 @@
           entries.push(current);
           newEntry(current);
           answer.className = "a pending";
+          startThinking();
           setStreaming(true);
+        } else if (kind === "reasoning") {
+          addReasoning(text);
         } else if (kind === "delta") {
+          stopThinking();
           raw += text;
           current.a = raw;
           frame ||= setTimeout(render, 100);
@@ -426,16 +660,16 @@
         } else if (kind === "stopped") {
           if (!current) return setStreaming(false);
           current.stopped = true;
-          finish("(stopped)");
+          finish("Stopped");
           saveHistory();
           current = null;
         } else if (kind === "error") {
           clearTimeout(frame);
           frame = 0;
+          stopThinking();
           setStreaming(false);
-          if (answer.classList.contains("pending")) {
-            answer.textContent = text;
-            answer.className = "a error";
+          if (answer?.classList.contains("pending")) {
+            showErrorIn(text);
             Object.assign(current, { a: text, error: true });
             saveHistory();
           } else {
@@ -444,10 +678,12 @@
         }
       });
 
+      // Clear everything (button, settings, `invisible-ai clear`): chat and transcript.
       listen("cleared", () => {
         entries = [];
         saveHistory();
-        history.replaceChildren();
+        history.innerHTML = hintHTML;
+        transcript.replaceChildren();
       });
 
       // Look: background opacity and text size, per viewer, applied immediately.
@@ -574,9 +810,6 @@
       });
       document.getElementById("clear").addEventListener("click", () => run("clear"));
 
-      // Hide to tray: same as the toggle hotkey. The app keeps running (control socket,
-      // tray menu, whisper-server).
-      document.getElementById("minimize").addEventListener("click", () => run("toggle"));
     </script>
   </body>
 </html>
