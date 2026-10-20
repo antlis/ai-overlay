@@ -141,6 +141,15 @@ fn read_cache(path: &PathBuf) -> Option<Vec<String>> {
     Some(ids)
 }
 
+/// Set `[speech] <key> = value` in config.toml, keeping its comments.
+pub fn set_speech(key: &str, value: impl Into<toml_edit::Value>) -> Result<(), String> {
+    let path = ai::config_path();
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{}: {e}", path.display()))?;
+    doc["speech"].or_insert(toml_edit::table())[key] = toml_edit::value(value);
+    std::fs::write(&path, doc.to_string()).map_err(|e| e.to_string())
+}
+
 /// Switch provider, set its model and the default question. An empty or built-in
 /// default question removes the setting.
 pub fn save(changes: Changes) -> Result<(), String> {

@@ -228,7 +228,10 @@
       #settings label[hidden] { display: none; }
       #settings .field { margin: 0 0 14px; font-size: 0.875em; }
       #settings .field-label { display: block; color: var(--muted); margin-bottom: 6px; }
-      #settings-status { font-size: 0.8em; color: var(--muted); }
+      #settings-status, #speech-status { font-size: 0.8em; color: var(--muted); }
+      #settings label.check { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+      #settings label.check > span { display: inline; margin: 0; color: var(--text); }
+      #settings label.check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
       #settings section { padding: 4px 0 18px; }
       #settings section + section { border-top: 1px solid var(--line); padding-top: 18px; }
       #settings h3 {
@@ -312,6 +315,24 @@
           <h3>Appearance</h3>
           <label><span>Background opacity <b id="alpha-value"></b></span><input id="alpha" type="range" min="0.2" max="1" step="0.02" /></label>
           <label><span>Text size <b id="font-value"></b></span><input id="font" type="range" min="12" max="24" step="1" /></label>
+        </section>
+        <section>
+          <h3>Spoken answers</h3>
+          <label class="check"><input type="checkbox" id="speak-toggle" /><span>Read answers aloud (local Piper voices)</span></label>
+          <div class="field"><span class="field-label">English voice</span>
+            <div class="row" style="gap: 6px">
+              <select id="voice-en" style="flex: 1; min-width: 0"></select>
+              <button type="button" class="icon preview" data-lang="en" title="Preview this voice">▶</button>
+            </div>
+          </div>
+          <div class="field"><span class="field-label">Russian voice</span>
+            <div class="row" style="gap: 6px">
+              <select id="voice-ru" style="flex: 1; min-width: 0"></select>
+              <button type="button" class="icon preview" data-lang="ru" title="Preview this voice">▶</button>
+            </div>
+          </div>
+          <label><span>Speed <b id="speed-value"></b></span><input id="speed" type="range" min="0.6" max="1.6" step="0.05" /></label>
+          <span id="speech-status"></span>
         </section>
         <section>
           <div class="row">
@@ -543,6 +564,7 @@
       function showSpeech(on) {
         speakButton.classList.toggle("on", on);
         speakButton.title = on ? "Spoken answers: on (click to turn off)" : "Spoken answers: off (click to turn on)";
+        document.getElementById("speak-toggle").checked = on;
         store("speak", on);
       }
       speakButton.addEventListener("click", () => {
@@ -831,7 +853,65 @@
         if (force) status.textContent = modelLists[name].length ? `${modelLists[name].length} models` : "No models returned";
       }
 
+      // Spoken answers: voice per language (downloaded on first use), speed, preview.
+      const speechStatus = document.getElementById("speech-status");
+      const speed = document.getElementById("speed");
+      const showSpeed = () => (document.getElementById("speed-value").textContent = `${Number(speed.value).toFixed(2)}×`);
+      async function loadVoices(lang, current) {
+        const select = document.getElementById(`voice-${lang}`);
+        try {
+          const voices = await invoke("list_voices", { lang });
+          select.replaceChildren(...voices.map((v) => {
+            const label = `${v.name} · ${v.region} · ${v.quality}${v.installed ? "  ✓" : `  (${v.size_mb} MB)`}`;
+            return new Option(label, v.key);
+          }));
+          if (!voices.some((v) => v.key === current)) select.append(new Option(`${current} (configured)`, current));
+          select.value = current;
+        } catch (e) {
+          select.replaceChildren(new Option(current, current));
+          speechStatus.textContent = String(e);
+        }
+      }
+      async function loadSpeech() {
+        try {
+          const speech = await invoke("speech_settings");
+          document.getElementById("speak-toggle").checked = speech.enabled;
+          speed.value = (1 / speech.length_scale).toFixed(2);
+          showSpeed();
+          loadVoices("en", speech.en);
+          loadVoices("ru", speech.ru);
+        } catch (e) {
+          speechStatus.textContent = String(e);
+        }
+      }
+      document.getElementById("speak-toggle").addEventListener("change", (e) => run(e.target.checked ? "speak on" : "speak off"));
+      for (const lang of ["en", "ru"]) {
+        const select = document.getElementById(`voice-${lang}`);
+        select.addEventListener("change", async () => {
+          const key = select.value;
+          const installed = select.selectedOptions[0]?.textContent.includes("✓");
+          speechStatus.textContent = installed ? "" : `Downloading ${key}…`;
+          select.disabled = true;
+          try {
+            await invoke("set_voice", { lang, key });
+            speechStatus.textContent = `Voice: ${key}`;
+            await loadVoices(lang, key);
+          } catch (e) {
+            speechStatus.textContent = String(e);
+          }
+          select.disabled = false;
+        });
+      }
+      for (const button of document.querySelectorAll("button.preview")) {
+        button.addEventListener("click", () =>
+          invoke("preview_voice", { lang: button.dataset.lang }).catch((e) => (speechStatus.textContent = String(e))));
+      }
+      speed.addEventListener("input", showSpeed);
+      speed.addEventListener("change", () =>
+        invoke("set_speech_speed", { lengthScale: 1 / Number(speed.value) }).catch((e) => (speechStatus.textContent = String(e))));
+
       async function openSettings() {
+        loadSpeech();
         status.textContent = "";
         try {
           const settings = await invoke("get_settings");

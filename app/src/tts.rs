@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 /// Speak answers (toggled from the panel / `invisible-ai speak`).
@@ -46,6 +46,9 @@ impl Default for SpeechConfig {
 
 struct Speaker {
     lang: &'static str,
+    /// Voice model and speed it was started with; a change restarts it.
+    model: String,
+    length_scale: f32,
     piper: Child,
     input: ChildStdin,
     player: Child,
@@ -102,8 +105,9 @@ pub fn say(app: &AppHandle, config: &SpeechConfig, lang: &'static str, sentence:
         return Ok(());
     }
     let mut speaker = SPEAKER.lock().unwrap();
-    if speaker.as_ref().is_some_and(|s| s.lang != lang) {
-        *speaker = None; // other voice: start that one
+    let model = expand(if lang == "ru" { &config.ru } else { &config.en });
+    if speaker.as_ref().is_some_and(|s| s.lang != lang || s.model != model || s.length_scale != config.length_scale) {
+        *speaker = None; // other language, voice or speed: start that one
     }
     if speaker.is_none() {
         *speaker = Some(spawn(app, config, lang)?);
@@ -148,7 +152,7 @@ fn spawn(app: &AppHandle, config: &SpeechConfig, lang: &'static str) -> Result<S
         .spawn()
         .map_err(|e| format!("cannot run piper: {e}"))?;
     let mut player = Command::new("pw-play")
-        .args(["--rate", &rate.to_string(), "--channels", "1", "--format", "s16", "-"])
+        .args(["--raw", "--rate", &rate.to_string(), "--channels", "1", "--format", "s16", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -190,7 +194,7 @@ fn spawn(app: &AppHandle, config: &SpeechConfig, lang: &'static str) -> Result<S
             }
         }
     });
-    Ok(Speaker { lang, piper, input, player })
+    Ok(Speaker { lang, model, length_scale: config.length_scale, piper, input, player })
 }
 
 /// Tell the panel when playback has run out.
@@ -210,6 +214,120 @@ fn watch_end(app: AppHandle) {
             }
         }
     });
+}
+
+/// A voice from Piper's catalog, for the settings picker.
+#[derive(Serialize)]
+pub struct Voice {
+    /// e.g. "en_US-lessac-medium"
+    key: String,
+    name: String,
+    /// e.g. "US", "GB"
+    region: String,
+    quality: String,
+    size_mb: u64,
+    installed: bool,
+}
+
+const VOICES_URL: &str = "https://huggingface.co/rhasspy/piper-voices/resolve/main";
+
+pub fn voices_dir() -> std::path::PathBuf {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local/share"))
+        .join("invisible-ai/voices")
+}
+
+/// Piper's voices.json, cached for a week.
+fn catalog() -> Result<serde_json::Value, String> {
+    let cache = std::env::var_os("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache"))
+        .join("invisible-ai/piper-voices.json");
+    let fresh = std::fs::metadata(&cache)
+        .and_then(|m| m.modified())
+        .is_ok_and(|t| t.elapsed().unwrap_or(Duration::MAX) < Duration::from_secs(7 * 86_400));
+    if !fresh {
+        let fetched = ureq::get(&format!("{VOICES_URL}/voices.json"))
+            .timeout(Duration::from_secs(20))
+            .call()
+            .map_err(|e| e.to_string())
+            .and_then(|r| r.into_string().map_err(|e| e.to_string()));
+        match fetched {
+            Ok(text) => {
+                if let Some(dir) = cache.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                let _ = std::fs::write(&cache, &text);
+            }
+            Err(e) if !cache.exists() => return Err(format!("cannot load the voice list: {e}")),
+            Err(_) => {} // offline: an old list is fine
+        }
+    }
+    let text = std::fs::read_to_string(&cache).map_err(|e| e.to_string())?;
+    serde_json::from_str(&text).map_err(|e| e.to_string())
+}
+
+/// Single-speaker voices for `lang` ("en", "ru"), sorted by region and name.
+pub fn voices(lang: &str) -> Result<Vec<Voice>, String> {
+    let catalog = catalog()?;
+    let dir = voices_dir();
+    let mut out: Vec<Voice> = catalog
+        .as_object()
+        .ok_or("bad voice list")?
+        .values()
+        .filter(|v| v["language"]["family"] == lang && v["num_speakers"] == 1)
+        .filter_map(|v| {
+            let key = v["key"].as_str()?.to_owned();
+            let size = v["files"].as_object()?.iter().find(|(path, _)| path.ends_with(".onnx"))?.1["size_bytes"].as_u64()?;
+            Some(Voice {
+                installed: dir.join(format!("{key}.onnx")).exists(),
+                name: v["name"].as_str()?.to_owned(),
+                region: v["language"]["region"].as_str().unwrap_or("").to_owned(),
+                quality: v["quality"].as_str().unwrap_or("").to_owned(),
+                size_mb: size / 1_000_000,
+                key,
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| (&a.region, &a.name, &a.quality).cmp(&(&b.region, &b.name, &b.quality)));
+    Ok(out)
+}
+
+/// Download voice `key` (model + config) if it isn't installed; returns the model path.
+pub fn install(key: &str) -> Result<String, String> {
+    let dir = voices_dir();
+    let model = dir.join(format!("{key}.onnx"));
+    if model.exists() && dir.join(format!("{key}.onnx.json")).exists() {
+        return Ok(model.display().to_string());
+    }
+    let catalog = catalog()?;
+    let files = catalog[key]["files"].as_object().ok_or_else(|| format!("unknown voice {key}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    for (path, info) in files {
+        let Some(name) = path.rsplit('/').next().filter(|n| n.ends_with(".onnx") || n.ends_with(".onnx.json")) else {
+            continue;
+        };
+        let response = ureq::get(&format!("{VOICES_URL}/{path}"))
+            .timeout(Duration::from_secs(600))
+            .call()
+            .map_err(|e| format!("download {name}: {e}"))?;
+        let part = dir.join(format!("{name}.part"));
+        let mut file = std::fs::File::create(&part).map_err(|e| e.to_string())?;
+        let written = std::io::copy(&mut response.into_reader(), &mut file).map_err(|e| e.to_string())?;
+        if info["size_bytes"].as_u64().is_some_and(|size| size != written) {
+            let _ = std::fs::remove_file(&part);
+            return Err(format!("download {name}: incomplete"));
+        }
+        std::fs::rename(&part, dir.join(name)).map_err(|e| e.to_string())?;
+    }
+    Ok(model.display().to_string())
+}
+
+/// Voice key ("en_US-lessac-medium") of a configured model path.
+pub fn key_of(path: &str) -> String {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    name.strip_suffix(".onnx").unwrap_or(name).to_owned()
 }
 
 /// Turns a streamed Markdown answer into sentences to speak: code blocks are replaced

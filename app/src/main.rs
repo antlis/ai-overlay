@@ -126,7 +126,7 @@ fn main() -> ExitCode {
     }
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![run, is_fullscreen, voice_language, get_settings, save_settings, copy_text, list_models, refresh_models])
+        .invoke_handler(tauri::generate_handler![run, is_fullscreen, voice_language, speech_settings, list_voices, set_voice, set_speech_speed, preview_voice, get_settings, save_settings, copy_text, list_models, refresh_models])
         .setup(move |app| {
             let overlay = app
                 .get_webview_window("overlay")
@@ -174,6 +174,55 @@ fn list_models(provider: String) -> Result<Vec<String>, String> {
 #[tauri::command]
 fn refresh_models(provider: String) -> Result<Vec<String>, String> {
     settings::models_for(&provider, true)
+}
+
+/// Spoken-answer settings: on/off, voice per language, speed.
+#[tauri::command]
+fn speech_settings() -> Result<serde_json::Value, String> {
+    let speech = ai::load_config()?.speech;
+    Ok(json!({
+        "enabled": tts::enabled(),
+        "en": tts::key_of(&speech.en),
+        "ru": tts::key_of(&speech.ru),
+        "length_scale": speech.length_scale,
+    }))
+}
+
+#[tauri::command]
+async fn list_voices(lang: String) -> Result<Vec<tts::Voice>, String> {
+    tts::voices(&lang)
+}
+
+/// Download the voice if needed and use it for `lang`.
+#[tauri::command]
+async fn set_voice(app: AppHandle, lang: String, key: String) -> Result<(), String> {
+    if lang != "en" && lang != "ru" {
+        return Err(format!("no voice setting for {lang}"));
+    }
+    let path = tts::install(&key)?;
+    settings::set_speech(&lang, path)?;
+    tts::stop(&app); // the next sentence starts the new voice
+    Ok(())
+}
+
+#[tauri::command]
+fn set_speech_speed(app: AppHandle, length_scale: f64) -> Result<(), String> {
+    settings::set_speech("length_scale", (length_scale.clamp(0.5, 2.0) * 100.0).round() / 100.0)?;
+    tts::stop(&app);
+    Ok(())
+}
+
+/// Say a sample sentence with the configured voice for `lang`.
+#[tauri::command]
+async fn preview_voice(app: AppHandle, lang: String) -> Result<(), String> {
+    let config = ai::load_config()?;
+    tts::stop(&app);
+    let (lang, sample) = if lang == "ru" {
+        ("ru", "Привет! Так звучит мой голос, когда я отвечаю на ваши вопросы.")
+    } else {
+        ("en", "Hi! This is how I sound when I answer your questions.")
+    };
+    tts::say(&app, &config.speech, lang, sample)
 }
 
 /// Current voice language and the ones to switch between.

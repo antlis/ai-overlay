@@ -127,8 +127,10 @@ for v in en/en_US/lessac/medium/en_US-lessac-medium ru/ru_RU/irina/medium/ru_RU-
 done
 ```
 
-Other voices: [piper-voices](https://huggingface.co/rhasspy/piper-voices); set them under
-`[speech]` (see `config.example.toml`). On speakers, people in a call hear the answer through
+Other voices: **Settings → Spoken answers** lists every single-speaker English and Russian
+voice from [piper-voices](https://huggingface.co/rhasspy/piper-voices) (✓ = installed); picking
+one downloads it (~60 MB) and saves it under `[speech]`. ▶ previews a voice, and the speed slider
+sets `length_scale`. On speakers, people in a call hear the answer through
 your mic; use headphones.
 
 ## AI provider
