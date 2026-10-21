@@ -14,6 +14,8 @@ pub struct Settings {
     providers: Vec<(String, String)>,
     default_question: String,
     invisible: bool,
+    /// Running on Wayland, the only place invisibility can work.
+    wayland: bool,
 }
 
 #[derive(Deserialize)]
@@ -21,7 +23,7 @@ pub struct Changes {
     provider: String,
     model: String,
     default_question: String,
-    invisible: bool,
+    pub invisible: bool,
 }
 
 const MODEL_CACHE_TTL: Duration = Duration::from_secs(86_400); // 1 day
@@ -42,6 +44,7 @@ pub fn get() -> Result<Settings, String> {
             .default_question
             .unwrap_or_else(|| crate::DEFAULT_QUESTION.to_owned()),
         invisible: config.ui.invisible,
+        wayland: crate::overlay::is_wayland(),
     })
 }
 

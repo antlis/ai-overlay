@@ -46,6 +46,12 @@
         flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         font-size: 11px; color: var(--muted);
       }
+      #invis-badge {
+        display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px;
+        background: var(--surface); font-size: 11px; color: var(--muted); white-space: nowrap; cursor: help;
+      }
+      #invis-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+      #invis-badge.on::before { background: #4ade80; }
       .controls { display: flex; align-items: center; gap: 6px; }
       #mode {
         display: inline-flex; align-items: center; gap: 6px; margin-right: 4px; padding: 4px 10px;
@@ -284,6 +290,7 @@
       <header>
         <h1><span class="logo">✦</span>ai-overlay</h1>
         <span id="model-badge" title="Provider · model"></span>
+        <span id="invis-badge"></span>
         <span class="controls">
           <span id="mode">Click-through</span>
           <button id="ask" title="Ask about screen"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg><span>Ask</span></button>
@@ -312,6 +319,12 @@
           <label id="model-custom-row" hidden><span>Model (not in the list — type any id)</span><input id="model-custom" autocomplete="off" /></label>
           <label><span>Default question (asked when you send nothing)</span><input id="default-question" autocomplete="off" /></label>
           <label class="check"><input type="checkbox" id="invisible" /><span>Invisible in screen sharing (Wayland, needs the compositor rule)</span></label>
+          <p class="hk-note" id="invisible-note">How invisibility works: the overlay is a Wayland layer-shell
+            surface named <code>ai-overlay</code>. A compositor rule (<code>block-out-from "screen-capture"</code>)
+            keeps it out of screen shares and screenshots; with a patched Niri it is left out entirely, so viewers
+            see the desktop underneath. Turning this off renames the surface to <code>ai-overlay-visible</code>,
+            which the rule doesn't match. Tested on Niri only, with the patch from
+            <code>contrib/niri/niri-invisible-layers.patch</code>. On X11 nothing can hide a window from a capture.</p>
           <div class="row">
             <button type="submit" class="primary">Save</button>
             <span id="settings-status"></span>
@@ -834,8 +847,21 @@
         modelBadge.textContent = `${provider} · ${model}`;
         modelBadge.title = modelBadge.textContent;
       }
+      const invisBadge = document.getElementById("invis-badge");
+      let onWayland = true;
+      function showInvisible(invisible, wayland) {
+        onWayland = wayland;
+        const on = invisible && wayland;
+        invisBadge.className = on ? "on" : "";
+        invisBadge.textContent = !wayland ? "Visible (X11)" : invisible ? "Invisible" : "Visible";
+        invisBadge.title = "Hidden from screen sharing only on Niri with a patched build (tested there only). "
+          + "See Settings for how it works.";
+      }
       invoke("get_settings")
-        .then((s) => showBadge(s.provider, Object.fromEntries(s.providers)[s.provider]))
+        .then((s) => {
+          showBadge(s.provider, Object.fromEntries(s.providers)[s.provider]);
+          showInvisible(s.invisible, s.wayland);
+        })
         .catch(() => {});
       let configured = {}, modelLists = {}, customModel = false, enteredInteractive = false;
 
@@ -937,6 +963,7 @@
           paintModels();
           questionInput.value = settings.default_question;
           invisibleToggle.checked = settings.invisible;
+          showInvisible(settings.invisible, settings.wayland);
           if (!modelLists[settings.provider]) loadModels(settings.provider);
         } catch (e) {
           status.textContent = String(e);
@@ -984,6 +1011,7 @@
           customModel = false;
           paintModels();
           showBadge(providerSelect.value, model);
+          showInvisible(invisibleToggle.checked, onWayland);
           status.textContent = "Saved";
         } catch (err) {
           status.textContent = String(err);
