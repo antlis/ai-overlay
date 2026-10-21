@@ -1,0 +1,45 @@
+name: Nix cache
+
+# Every push to master builds the Nix package and pushes it to Cachix, so `nixos-rebuild`
+# downloads the app instead of compiling it. Needs the repository variable CACHIX_CACHE and
+# the secret CACHIX_AUTH_TOKEN; without them this only prints a notice.
+on:
+  push:
+    branches: [master]
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - app/**
+      - ui/**
+      - flake.nix
+      - flake.lock
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nix-cache:
+    runs-on: ubuntu-latest
+    env:
+      CACHIX_CACHE: ${{ vars.CACHIX_CACHE }}
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        if: env.CACHIX_AUTH_TOKEN != '' && env.CACHIX_CACHE != ''
+
+      - uses: cachix/cachix-action@v16
+        if: env.CACHIX_AUTH_TOKEN != '' && env.CACHIX_CACHE != ''
+        with:
+          name: ${{ vars.CACHIX_CACHE }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Build
+        if: env.CACHIX_AUTH_TOKEN != '' && env.CACHIX_CACHE != ''
+        run: nix build .#default -L
+
+      - name: Not configured
+        if: env.CACHIX_AUTH_TOKEN == '' || env.CACHIX_CACHE == ''
+        run: echo "::notice::CACHIX_CACHE or CACHIX_AUTH_TOKEN is not set, nothing pushed to Nix cache"
