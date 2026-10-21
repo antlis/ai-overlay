@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>invisible-ai</title>
+    <title>ai-overlay</title>
     <link rel="stylesheet" href="vendor/github-dark.min.css" />
     <script src="vendor/marked.min.js"></script>
     <script src="vendor/purify.min.js"></script>
@@ -41,6 +41,10 @@
       .logo {
         width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; font-size: 13px;
         background: linear-gradient(135deg, #8b6cff, #4fc3f7); color: #fff;
+      }
+      #model-badge {
+        flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: 11px; color: var(--muted);
       }
       .controls { display: flex; align-items: center; gap: 6px; }
       #mode {
@@ -278,7 +282,8 @@
   <body>
     <div class="panel">
       <header>
-        <h1><span class="logo">✦</span>invisible-ai</h1>
+        <h1><span class="logo">✦</span>ai-overlay</h1>
+        <span id="model-badge" title="Provider · model"></span>
         <span class="controls">
           <span id="mode">Click-through</span>
           <button id="ask" title="Ask about screen"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg><span>Ask</span></button>
@@ -306,6 +311,7 @@
           </div>
           <label id="model-custom-row" hidden><span>Model (not in the list — type any id)</span><input id="model-custom" autocomplete="off" /></label>
           <label><span>Default question (asked when you send nothing)</span><input id="default-question" autocomplete="off" /></label>
+          <label class="check"><input type="checkbox" id="invisible" /><span>Invisible in screen sharing (Wayland, needs the compositor rule)</span></label>
           <div class="row">
             <button type="submit" class="primary">Save</button>
             <span id="settings-status"></span>
@@ -343,16 +349,16 @@
         <section id="hotkeys">
           <h3>Hotkeys</h3>
           <div class="hk-list">
-            <div class="hk"><span class="keys" data-keys="Mod+\"></span><span class="what">Show / hide <small>starts the app if it isn't running</small></span><button type="button" class="icon" data-copy="invisible-ai toggle" title="Copy command: invisible-ai toggle"></button></div>
-            <div class="hk"><span class="keys" data-keys="Mod+Ctrl+\"></span><span class="what">Ask <small>show the panel and type a question</small></span><button type="button" class="icon" data-copy="invisible-ai prompt" title="Copy command: invisible-ai prompt"></button></div>
-            <div class="hk"><span class="keys" data-keys="Mod+Alt+\"></span><span class="what">Voice <small>start / stop live transcription</small></span><button type="button" class="icon" data-copy="invisible-ai listen" title="Copy command: invisible-ai listen"></button></div>
-            <div class="hk"><span class="keys" data-keys="Mod+Alt+Shift+\"></span><span class="what">Spoken answers <small>on / off; the speaker button stops a long one</small></span><button type="button" class="icon" data-copy="invisible-ai speak" title="Copy command: invisible-ai speak"></button></div>
-            <div class="hk"><span class="keys" data-keys="Mod+PageUp"></span><span class="what">Scroll answers <small>Mod+PageDown scrolls down; no mouse needed</small></span><button type="button" class="icon" data-copy="invisible-ai scroll up" title="Copy command: invisible-ai scroll up"></button></div>
-            <div class="hk"><span class="keys" data-keys="Mod+Shift+\"></span><span class="what">Interact <small>click and type in the panel</small></span><button type="button" class="icon" data-copy="invisible-ai interact" title="Copy command: invisible-ai interact"></button></div>
-            <div class="hk"><span class="keys" data-keys="Mod+Ctrl+BackSpace"></span><span class="what">Clear everything <small>chat, follow-up context, transcript</small></span><button type="button" class="icon" data-copy="invisible-ai clear" title="Copy command: invisible-ai clear"></button></div>
+            <div class="hk"><span class="keys" data-keys="Mod+\"></span><span class="what">Show / hide <small>starts the app if it isn't running</small></span><button type="button" class="icon" data-copy="ai-overlay toggle" title="Copy command: ai-overlay toggle"></button></div>
+            <div class="hk"><span class="keys" data-keys="Mod+Ctrl+\"></span><span class="what">Ask <small>show the panel and type a question</small></span><button type="button" class="icon" data-copy="ai-overlay prompt" title="Copy command: ai-overlay prompt"></button></div>
+            <div class="hk"><span class="keys" data-keys="Mod+Alt+\"></span><span class="what">Voice <small>start / stop live transcription</small></span><button type="button" class="icon" data-copy="ai-overlay listen" title="Copy command: ai-overlay listen"></button></div>
+            <div class="hk"><span class="keys" data-keys="Mod+Alt+Shift+\"></span><span class="what">Spoken answers <small>on / off; the speaker button stops a long one</small></span><button type="button" class="icon" data-copy="ai-overlay speak" title="Copy command: ai-overlay speak"></button></div>
+            <div class="hk"><span class="keys" data-keys="Mod+PageUp"></span><span class="what">Scroll answers <small>Mod+PageDown scrolls down; no mouse needed</small></span><button type="button" class="icon" data-copy="ai-overlay scroll up" title="Copy command: ai-overlay scroll up"></button></div>
+            <div class="hk"><span class="keys" data-keys="Mod+Shift+\"></span><span class="what">Interact <small>click and type in the panel</small></span><button type="button" class="icon" data-copy="ai-overlay interact" title="Copy command: ai-overlay interact"></button></div>
+            <div class="hk"><span class="keys" data-keys="Mod+Ctrl+BackSpace"></span><span class="what">Clear everything <small>chat, follow-up context, transcript</small></span><button type="button" class="icon" data-copy="ai-overlay clear" title="Copy command: ai-overlay clear"></button></div>
             <div class="hk"><span class="keys" data-keys="Mod+/"></span><span class="what">Keybinding cheatsheet <small>rofi; Mod+Shift+/ lists all</small></span></div>
           </div>
-          <p class="hk-note">Bindings live in your WM config (<code>~/.config/niri/config.kdl</code> or <code>~/.config/i3/config</code>). The copy button copies the command for a new binding; <code>invisible-ai --help</code> lists all commands. Voice language: <code>invisible-ai language</code> switches, <code>invisible-ai language ru</code> picks one.</p>
+          <p class="hk-note">Bindings live in your WM config (<code>~/.config/niri/config.kdl</code> or <code>~/.config/i3/config</code>). The copy button copies the command for a new binding; <code>ai-overlay --help</code> lists all commands. Voice language: <code>ai-overlay language</code> switches, <code>ai-overlay language ru</code> picks one.</p>
         </section>
       </form>
       <form id="ask-form">
@@ -398,7 +404,7 @@
         else setTimeout(() => { if (nearBottom()) follow = true; }, 50);
       }, { passive: true });
 
-      // Scroll hotkeys (invisible-ai scroll …): a page at a time, without the mouse.
+      // Scroll hotkeys (ai-overlay scroll …): a page at a time, without the mouse.
       listen("scroll", ({ payload }) => {
         const view = document.body.classList.contains("settings") ? document.getElementById("settings") : history;
         const page = view.clientHeight * 0.85;
@@ -730,7 +736,7 @@
       setStreaming(false);
       showFullscreen(true);
 
-      // Ask hotkey (invisible-ai prompt): straight to the question input.
+      // Ask hotkey (ai-overlay prompt): straight to the question input.
       listen("prompt", () => {
         closeSettings(false);
         askInput.focus();
@@ -787,7 +793,7 @@
         }
       });
 
-      // Clear everything (button, settings, `invisible-ai clear`): chat and transcript.
+      // Clear everything (button, settings, `ai-overlay clear`): chat and transcript.
       listen("cleared", () => {
         entries = [];
         saveHistory();
@@ -822,6 +828,15 @@
       const modelCustom = document.getElementById("model-custom");
       const questionInput = document.getElementById("default-question");
       const status = document.getElementById("settings-status");
+      const invisibleToggle = document.getElementById("invisible");
+      const modelBadge = document.getElementById("model-badge");
+      function showBadge(provider, model) {
+        modelBadge.textContent = `${provider} · ${model}`;
+        modelBadge.title = modelBadge.textContent;
+      }
+      invoke("get_settings")
+        .then((s) => showBadge(s.provider, Object.fromEntries(s.providers)[s.provider]))
+        .catch(() => {});
       let configured = {}, modelLists = {}, customModel = false, enteredInteractive = false;
 
       function paintModels() {
@@ -921,6 +936,7 @@
           customModel = false;
           paintModels();
           questionInput.value = settings.default_question;
+          invisibleToggle.checked = settings.invisible;
           if (!modelLists[settings.provider]) loadModels(settings.provider);
         } catch (e) {
           status.textContent = String(e);
@@ -958,7 +974,7 @@
         const model = (modelSelect.value === "__custom__" ? modelCustom.value : modelSelect.value).trim();
         try {
           await invoke("save_settings", {
-            changes: { provider: providerSelect.value, model, default_question: questionInput.value },
+            changes: { provider: providerSelect.value, model, default_question: questionInput.value, invisible: invisibleToggle.checked },
           });
           configured[providerSelect.value] = model;
           if (modelLists[providerSelect.value] && !modelLists[providerSelect.value].includes(model)) {
@@ -967,6 +983,7 @@
           }
           customModel = false;
           paintModels();
+          showBadge(providerSelect.value, model);
           status.textContent = "Saved";
         } catch (err) {
           status.textContent = String(err);

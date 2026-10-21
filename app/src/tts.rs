@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
-/// Speak answers (toggled from the panel / `invisible-ai speak`).
+/// Speak answers (toggled from the panel / `ai-overlay speak`).
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static SPEAKER: Mutex<Option<Speaker>> = Mutex::new(None);
 /// Recent playback intervals, for dropping transcript clips that overlap them.
@@ -37,8 +37,8 @@ pub struct SpeechConfig {
 impl Default for SpeechConfig {
     fn default() -> Self {
         Self {
-            en: "~/.local/share/invisible-ai/voices/en_US-lessac-medium.onnx".into(),
-            ru: "~/.local/share/invisible-ai/voices/ru_RU-irina-medium.onnx".into(),
+            en: "~/.local/share/ai-overlay/voices/en_US-lessac-medium.onnx".into(),
+            ru: "~/.local/share/ai-overlay/voices/ru_RU-irina-medium.onnx".into(),
             length_scale: 1.0,
         }
     }
@@ -235,7 +235,7 @@ pub fn voices_dir() -> std::path::PathBuf {
     std::env::var_os("XDG_DATA_HOME")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local/share"))
-        .join("invisible-ai/voices")
+        .join("ai-overlay/voices")
 }
 
 /// Piper's voices.json, cached for a week.
@@ -243,7 +243,7 @@ fn catalog() -> Result<serde_json::Value, String> {
     let cache = std::env::var_os("XDG_CACHE_HOME")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache"))
-        .join("invisible-ai/piper-voices.json");
+        .join("ai-overlay/piper-voices.json");
     let fresh = std::fs::metadata(&cache)
         .and_then(|m| m.modified())
         .is_ok_and(|t| t.elapsed().unwrap_or(Duration::MAX) < Duration::from_secs(7 * 86_400));

@@ -1,5 +1,5 @@
 {
-  description = "invisible-ai — screen- and meeting-aware AI overlay for Linux";
+  description = "ai-overlay — screen- and meeting-aware AI overlay for Linux";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "invisible-ai",
+  "productName": "ai-overlay",
   "version": "0.1.0",
-  "identifier": "xyz.antlis.invisible-ai",
+  "identifier": "xyz.antlis.ai-overlay",
   "build": {
     "frontendDist": "../ui"
   },
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "overlay",
-        "title": "invisible-ai",
+        "title": "ai-overlay",
         "width": 480,
         "height": 320,
         "visible": false,

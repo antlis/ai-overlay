@@ -52,7 +52,7 @@ pub struct VoiceConfig {
 impl Default for VoiceConfig {
     fn default() -> Self {
         Self {
-            model: "~/.local/share/invisible-ai/models/ggml-base.bin".into(),
+            model: "~/.local/share/ai-overlay/models/ggml-base.bin".into(),
             language: "en,ru".into(),
             threads: 4,
             port: 8178,
@@ -389,7 +389,7 @@ fn start(
                 Ok(_) => eprintln!("[{speaker}] (no speech recognised)"),
                 Err(e) => {
                     eprintln!("transcribe: {e}");
-                    let text = format!("Transcription failed: {e} (see ~/.cache/invisible-ai/whisper-server.log)");
+                    let text = format!("Transcription failed: {e} (see ~/.cache/ai-overlay/whisper-server.log)");
                     let _ = app.emit("answer", json!({ "kind": "error", "text": text }));
                 }
             }
@@ -407,12 +407,12 @@ fn cache_dir() -> Result<std::path::PathBuf, String> {
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
         .ok_or("neither XDG_CACHE_HOME nor HOME is set")?
-        .join("invisible-ai");
+        .join("ai-overlay");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
 
-/// whisper-server's output goes to `$XDG_CACHE_HOME/invisible-ai/whisper-server.log`,
+/// whisper-server's output goes to `$XDG_CACHE_HOME/ai-overlay/whisper-server.log`,
 /// started fresh for each listening session and appended to on restarts.
 fn server_log(fresh: bool) -> Result<std::fs::File, String> {
     std::fs::OpenOptions::new()
@@ -500,7 +500,7 @@ fn transcribe(url: &str, samples: &[i16], language: &str) -> Result<String, Stri
 
 /// One whisper-server request: (text without non-speech markers, detected language name).
 fn request(url: &str, audio: &[u8], language: &str) -> Result<(String, String), String> {
-    const BOUNDARY: &str = "invisible-ai-audio";
+    const BOUNDARY: &str = "ai-overlay-audio";
     let mut body = Vec::new();
     let _ = write!(
         body,

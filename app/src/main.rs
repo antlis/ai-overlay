@@ -15,11 +15,11 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, RunEvent};
 
 const HELP: &str = "\
-invisible-ai: AI overlay that answers questions about your screen.
+ai-overlay: AI overlay that answers questions about your screen.
 
 Usage:
-  invisible-ai             run the app (one instance at a time)
-  invisible-ai <command>   control the running app; starts it first if needed
+  ai-overlay             run the app (one instance at a time)
+  ai-overlay <command>   control the running app; starts it first if needed
 
 Commands:
   toggle             show / hide the panel
@@ -40,7 +40,7 @@ Commands:
   capture            save a screenshot (without the panel), print its path
   quit               quit the app
 
-Config: ~/.config/invisible-ai/config.toml";
+Config: ~/.config/ai-overlay/config.toml";
 pub const DEFAULT_QUESTION: &str = "What's on my screen? Help me with what I'm working on.";
 
 /// Start the app in the background and wait until it listens on the control socket.
@@ -54,7 +54,7 @@ fn start() -> std::io::Result<()> {
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
         .unwrap_or_else(std::env::temp_dir)
-        .join("invisible-ai");
+        .join("ai-overlay");
     std::fs::create_dir_all(&log_dir)?;
     let log = std::fs::File::create(log_dir.join("app.log"))?;
     std::process::Command::new(std::env::current_exe()?)
@@ -71,11 +71,11 @@ fn start() -> std::io::Result<()> {
             return Ok(());
         }
     }
-    Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "no reply within 10 s; see ~/.cache/invisible-ai/app.log"))
+    Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "no reply within 10 s; see ~/.cache/ai-overlay/app.log"))
 }
 
 fn main() -> ExitCode {
-    // `invisible-ai <command>` controls the running instance.
+    // `ai-overlay <command>` controls the running instance.
     let args: Vec<String> = std::env::args().skip(1).collect();
     if matches!(args.first().map(String::as_str), Some("-h" | "--help" | "help")) {
         println!("{HELP}");
@@ -103,7 +103,7 @@ fn main() -> ExitCode {
                 }
             },
             Err(e) => {
-                eprintln!("cannot start invisible-ai ({e})");
+                eprintln!("cannot start ai-overlay ({e})");
                 ExitCode::FAILURE
             }
         };
@@ -139,7 +139,7 @@ fn main() -> ExitCode {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building invisible-ai")
+        .expect("error while building ai-overlay")
         .run(|_, event| {
             if let RunEvent::Exit = event {
                 voice::shutdown();
@@ -162,8 +162,13 @@ fn get_settings() -> Result<settings::Settings, String> {
 }
 
 #[tauri::command]
-fn save_settings(changes: settings::Changes) -> Result<(), String> {
-    settings::save(changes)
+fn save_settings(app: AppHandle, changes: settings::Changes) -> Result<(), String> {
+    let invisible = changes.invisible;
+    settings::save(changes)?;
+    if let Some(window) = app.get_webview_window("overlay") {
+        overlay::set_invisible(&window, invisible).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -366,7 +371,7 @@ pub fn dispatch(app: &AppHandle, cmd: &str) -> Result<String, String> {
             return Ok(models.join("\n"));
         }
         "quit" => app.exit(0),
-        _ => return Err(format!("unknown command '{cmd}' (see invisible-ai --help)")),
+        _ => return Err(format!("unknown command '{cmd}' (see ai-overlay --help)")),
     }
     Ok(String::new())
 }

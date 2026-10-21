@@ -94,13 +94,13 @@ pub fn png(image: &RgbaImage) -> Result<Vec<u8>, String> {
     Ok(buf.into_inner())
 }
 
-/// Save a capture under `$XDG_CACHE_HOME/invisible-ai/captures/` and return its path.
+/// Save a capture under `$XDG_CACHE_HOME/ai-overlay/captures/` and return its path.
 pub fn save(image: &RgbaImage) -> Result<PathBuf, String> {
     let dir = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
         .ok_or("neither XDG_CACHE_HOME nor HOME is set")?
-        .join("invisible-ai/captures");
+        .join("ai-overlay/captures");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
     let millis = SystemTime::now()

@@ -1,6 +1,6 @@
 //! LLM client for any OpenAI-compatible chat-completions API
 //! (NanoGPT, OpenCode Zen, OpenRouter, Ollama, ...), configured in
-//! `$XDG_CONFIG_HOME/invisible-ai/config.toml`.
+//! `$XDG_CONFIG_HOME/ai-overlay/config.toml`.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
@@ -30,10 +30,24 @@ pub struct Config {
     pub speech: crate::tts::SpeechConfig,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize)]
 pub struct UiConfig {
-    /// Asked when the question is empty (Ask with nothing typed, `invisible-ai ask`).
+    /// Asked when the question is empty (Ask with nothing typed, `ai-overlay ask`).
     pub default_question: Option<String>,
+    /// Hide the overlay from screen sharing (Wayland: the layer namespace a compositor
+    /// rule matches). On by default.
+    #[serde(default = "default_invisible")]
+    pub invisible: bool,
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self { default_question: None, invisible: true }
+    }
+}
+
+fn default_invisible() -> bool {
+    true
 }
 
 #[derive(Deserialize)]
@@ -51,7 +65,7 @@ pub fn config_path() -> PathBuf {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"))
-        .join("invisible-ai/config.toml")
+        .join("ai-overlay/config.toml")
 }
 
 pub fn load_config() -> Result<Config, String> {

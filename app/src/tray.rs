@@ -20,7 +20,7 @@ pub fn setup(app: &App) -> tauri::Result<()> {
     )?;
 
     let mut tray = TrayIconBuilder::with_id("main")
-        .tooltip("invisible-ai")
+        .tooltip("ai-overlay")
         .menu(&menu)
         .on_menu_event(|app, event| {
             // Off the UI thread: some commands (listen) take seconds to start.

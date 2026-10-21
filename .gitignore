@@ -2,7 +2,7 @@
 /result
 /app/gen
 
-# invisible-ai scratchpad / models / state
+# ai-overlay scratchpad / models / state
 /.scratchpad
 /target
-$HOME/.local/state/invisible-ai/layout.json
+$HOME/.local/state/ai-overlay/layout.json

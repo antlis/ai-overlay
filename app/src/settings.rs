@@ -13,6 +13,7 @@ pub struct Settings {
     /// (name, model) of every configured provider, sorted by name.
     providers: Vec<(String, String)>,
     default_question: String,
+    invisible: bool,
 }
 
 #[derive(Deserialize)]
@@ -20,6 +21,7 @@ pub struct Changes {
     provider: String,
     model: String,
     default_question: String,
+    invisible: bool,
 }
 
 const MODEL_CACHE_TTL: Duration = Duration::from_secs(86_400); // 1 day
@@ -39,6 +41,7 @@ pub fn get() -> Result<Settings, String> {
             .ui
             .default_question
             .unwrap_or_else(|| crate::DEFAULT_QUESTION.to_owned()),
+        invisible: config.ui.invisible,
     })
 }
 
@@ -121,7 +124,7 @@ fn cache_path(provider: &str) -> PathBuf {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
         .unwrap_or_else(std::env::temp_dir)
-        .join("invisible-ai/models");
+        .join("ai-overlay/models");
     dir.join(format!("{provider}.json"))
 }
 
@@ -150,7 +153,7 @@ pub fn set_speech(key: &str, value: impl Into<toml_edit::Value>) -> Result<(), S
     std::fs::write(&path, doc.to_string()).map_err(|e| e.to_string())
 }
 
-/// Switch provider, set its model and the default question. An empty or built-in
+/// Switch provider, set its model, the default question and invisibility. An empty or built-in
 /// default question removes the setting.
 pub fn save(changes: Changes) -> Result<(), String> {
     let path = ai::config_path();
@@ -176,6 +179,14 @@ pub fn save(changes: Changes) -> Result<(), String> {
     } else {
         doc["ui"].or_insert(toml_edit::table())["default_question"] = toml_edit::value(question);
     }
+    if changes.invisible {
+        if let Some(ui) = doc.get_mut("ui").and_then(|ui| ui.as_table_like_mut()) {
+            ui.remove("invisible");
+        }
+    } else {
+        doc["ui"].or_insert(toml_edit::table())["invisible"] = toml_edit::value(false);
+    }
+
     std::fs::write(&path, doc.to_string()).map_err(|e| e.to_string())
 }
 

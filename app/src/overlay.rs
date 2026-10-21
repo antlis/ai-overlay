@@ -56,7 +56,7 @@ fn layout_path() -> std::path::PathBuf {
         .unwrap_or_else(|| {
             std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/state")
         })
-        .join("invisible-ai/layout.json")
+        .join("ai-overlay/layout.json")
 }
 
 fn load_layout() {
@@ -89,7 +89,16 @@ fn save_layout(width: i32, height: i32) {
 
 /// Layer-shell namespace on Wayland; compositor rules (e.g. Niri's block-out) match it.
 #[cfg(target_os = "linux")]
-pub const NAMESPACE: &str = "invisible-ai";
+pub const NAMESPACE: &str = "ai-overlay";
+/// Namespace when invisibility is off: doesn't match the block-out rule, so screen
+/// shares show the overlay.
+#[cfg(target_os = "linux")]
+const NAMESPACE_VISIBLE: &str = "ai-overlay-visible";
+
+#[cfg(target_os = "linux")]
+fn namespace(invisible: bool) -> &'static str {
+    if invisible { NAMESPACE } else { NAMESPACE_VISIBLE }
+}
 
 #[cfg(target_os = "linux")]
 thread_local! {
@@ -128,7 +137,8 @@ pub fn setup(window: &WebviewWindow) -> tauri::Result<()> {
             layer.set_app_paintable(true);
             layer.init_layer_shell();
             layer.set_layer(Layer::Overlay);
-            layer.set_namespace(NAMESPACE);
+            let invisible = crate::ai::load_config().map_or(true, |c| c.ui.invisible);
+            layer.set_namespace(namespace(invisible));
             layer.set_keyboard_mode(KeyboardMode::None);
             // Position relative to the whole output, not the area bars leave free.
             layer.set_exclusive_zone(-1);
@@ -204,6 +214,34 @@ fn connect_layout(window: &WebviewWindow, gtk_window: &gtk::Window) {
         }
         gtk::glib::Propagation::Proceed
     });
+}
+
+/// Wayland: switch the layer namespace (what the compositor's block-out rule matches).
+/// The namespace is fixed once mapped, so a shown window is remapped. No-op on X11,
+/// where nothing can hide the overlay from a capture.
+pub fn set_invisible(window: &WebviewWindow, invisible: bool) -> tauri::Result<()> {
+    #[cfg(target_os = "linux")]
+    if WAYLAND.load(Ordering::SeqCst) {
+        let w = window.clone();
+        return window.run_on_main_thread(move || {
+            use gtk::prelude::WidgetExt;
+            use gtk_layer_shell::LayerShell;
+            let Some(layer) = toplevel(&w) else { return };
+            if layer.namespace().as_deref() == Some(namespace(invisible)) {
+                return;
+            }
+            let shown = layer.is_visible();
+            if shown {
+                layer.hide();
+            }
+            layer.set_namespace(namespace(invisible));
+            if shown {
+                gtk::glib::idle_add_local_once(move || layer.show_all());
+            }
+        });
+    }
+    let _ = (window, invisible);
+    Ok(())
 }
 
 pub fn is_wayland() -> bool {

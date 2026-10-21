@@ -1,4 +1,4 @@
-# Copy to ~/.config/invisible-ai/config.toml
+# Copy to ~/.config/ai-overlay/config.toml
 #
 # Any OpenAI-compatible chat-completions API works. The model must accept images.
 # The key comes from `api_key_env` if that variable is set, else from `api_key_cmd`.
@@ -14,7 +14,7 @@ base_url = "https://nano-gpt.com/api/v1"
 #   google/gemma-4-31b-it          fastest (~1-3 s) but misread the dense table
 model = "minimax/minimax-latest"
 api_key_env = "NANO_GPT_API_KEY"
-api_key_cmd = "cat ~/.config/invisible-ai/nanogpt.key"
+api_key_cmd = "cat ~/.config/ai-overlay/nanogpt.key"
 
 # OpenCode Zen. Free models (*-free) only work from inside OpenCode itself, so use a paid
 # one on the chat-completions endpoint (not the gpt-*, claude-* or gemini-* models).
@@ -36,9 +36,12 @@ base_url = "http://127.0.0.1:11434/v1"
 model = "qwen2.5vl:7b"
 api_key_cmd = "echo ollama"
 
-# Spoken answers (speaker button / invisible-ai speak): local Piper voices, see README.
+# Spoken answers (speaker button / ai-overlay speak): local Piper voices, see README.
 # These are the defaults; the .onnx.json must sit next to each .onnx.
 # [speech]
-# en = "~/.local/share/invisible-ai/voices/en_US-lessac-medium.onnx"
-# ru = "~/.local/share/invisible-ai/voices/ru_RU-irina-medium.onnx"
+# en = "~/.local/share/ai-overlay/voices/en_US-lessac-medium.onnx"
+# ru = "~/.local/share/ai-overlay/voices/ru_RU-irina-medium.onnx"
 # length_scale = 1.0  # < 1 speaks faster, > 1 slower
+
+# [ui]
+# invisible = false   # default true: hide the overlay from screen sharing (Wayland layer rule)

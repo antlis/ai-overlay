@@ -1,5 +1,5 @@
 [package]
-name = "invisible-ai"
+name = "ai-overlay"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

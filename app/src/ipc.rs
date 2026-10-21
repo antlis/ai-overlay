@@ -1,4 +1,4 @@
-//! Control socket: the running app listens, `invisible-ai <command>` sends.
+//! Control socket: the running app listens, `ai-overlay <command>` sends.
 
 use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -8,7 +8,7 @@ pub fn socket_path() -> PathBuf {
     std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
-        .join("invisible-ai.sock")
+        .join("ai-overlay.sock")
 }
 
 /// Send one command to the running instance and return its reply.
@@ -27,7 +27,7 @@ pub fn bind() -> io::Result<UnixListener> {
     if UnixStream::connect(&path).is_ok() {
         return Err(io::Error::new(
             io::ErrorKind::AddrInUse,
-            "invisible-ai is already running",
+            "ai-overlay is already running",
         ));
     }
     // Left behind by a run that didn't exit cleanly.
