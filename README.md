@@ -187,8 +187,14 @@ Backend crates (`core`, `x11`, `wayland`, `audio`, `ai`) are added as their mile
 Goal: the overlay is fully invisible in screen shares, with viewers seeing the desktop underneath
 (as on macOS/Windows), not a black box.
 
-- **X11:** not possible. Every capturer reads the same final screen image, and there's no
-  per-window capture exclusion.
+- **X11 (i3 etc.):** not possible to hide it from a full-screen share. Every capturer reads the
+  same final screen image, and there's no per-window capture exclusion. Workarounds:
+  - Share a single window instead of the screen (in Meet: "Window"). The browser captures just
+    that window, so the overlay isn't in it.
+  - Keep the overlay on a monitor you aren't sharing (a virtual one made with `xrandr` works too).
+  - For other apps you don't need to see while sharing (mail, messengers), the i3 scratchpad
+    (`move scratchpad` / `scratchpad show`) hides them, but it hides them from you too, and a shown
+    scratchpad window is visible in the share. For the overlay, use `ai-overlay toggle` instead.
 - **Wayland (Niri), works, but needs a patched Niri:** the overlay is a layer-shell surface
   (namespace `ai-overlay`), blocked out of screencasts by a layer rule:
 
