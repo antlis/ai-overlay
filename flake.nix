@@ -69,8 +69,13 @@
           buildInputs = tauriLibs ++ backendLibs;
           RUSTFLAGS = "-C link-arg=-Wl,-z,stack-size=8388608";
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (tauriLibs ++ backendLibs);
+          # GTK3 on Wayland reads the screen DPI from GNOME's desktop-interface GSettings schema.
+          # Without it (a bare Niri session has no GNOME schemas on XDG_DATA_DIRS) the DPI is -1,
+          # WebKit's page zoom becomes negative and the whole UI is laid out and painted wrong.
           postInstall = ''
-            wrapProgram $out/bin/ai-overlay --prefix PATH : ${pkgs.lib.makeBinPath runtimeBins}
+            wrapProgram $out/bin/ai-overlay \
+              --prefix PATH : ${pkgs.lib.makeBinPath runtimeBins} \
+              --suffix XDG_DATA_DIRS : ${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}
           '';
         };
 
